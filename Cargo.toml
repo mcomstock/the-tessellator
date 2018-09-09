@@ -1,0 +1,6 @@
+[package]
+name = "the-tessellator"
+version = "0.1.0"
+authors = ["Max Comstock <maxibillion6@gmail.com>"]
+
+[dependencies]
