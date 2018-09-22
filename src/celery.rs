@@ -11,6 +11,9 @@ const CELL_DENSITY: f64 = 1.25;
 
 /// Contains a combination of distance information and indices to a cell. Used for sorting cells by
 /// distance when searching for neighbors.
+///
+/// The distance between two cells is always determined by the relative cell positions, so we can
+/// pre-compute that information for cell relationships that are likely to be compared often.
 #[derive(Debug, Default)]
 struct DistanceIndex {
     distance: f64,
@@ -28,6 +31,23 @@ impl PartialEq for DistanceIndex {
 impl PartialOrd for DistanceIndex {
     fn partial_cmp(&self, other: &DistanceIndex) -> Option<Ordering> {
         self.distance.partial_cmp(&other.distance)
+    }
+}
+
+impl Eq for DistanceIndex {}
+
+impl Ord for DistanceIndex {
+    fn cmp(&self, other: &DistanceIndex) -> Ordering {
+        // TODO: I completely flaunt the IEEE standard for floats here, but I need a total ordering
+        // to do the search. I might want to revisit this logic, or somehow ensure that having a
+        // value of NaN is not possible. It seems this can be done with a wrapper type for f64.
+        if self.distance.is_nan() {
+            Ordering::Less
+        } else if other.distance.is_nan() {
+            Ordering::Greater
+        } else {
+            self.distance.partial_cmp(&other.distance).unwrap()
+        }
     }
 }
 
@@ -191,7 +211,7 @@ struct Celery<'a, PointType: ToCeleryPoint + Default + 'a> {
     /// Information about the structure of individual cells.
     cell_info: CeleryCellInfo,
 
-    /// The order in which to search through cells.
+    /// The order of relative cell positions to search through.
     search_order: Vec<DistanceIndex>,
 }
 
@@ -204,6 +224,7 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
         let cells = Celery::get_cells(pts, &bounds, &cell_info);
         let sorted_indices = Celery::get_sorted_indices(pts, &cells);
         let delimiters = Celery::get_delimiters(pts, &cells, &sorted_indices, &bounds, &cell_info);
+        let search_order = Celery::<PointType>::get_search_order(&cell_info);
 
         Celery::<PointType> {
             bounds: bounds,
@@ -212,7 +233,7 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
             delimiters: delimiters,
             sorted_indices: sorted_indices,
             cell_info: cell_info,
-            search_order: Vec::default(), // TO CHANGE
+            search_order: search_order,
         }
     }
 
@@ -329,7 +350,7 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
                         delimiters.push(num_points);
                     }
 
-                    return delimiters
+                    return delimiters;
                 }
             }
 
@@ -339,7 +360,273 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
         // Go one past the end so delimiters can be checked for the last cell.
         delimiters.push(num_points);
 
-        return delimiters
+        return delimiters;
+    }
+
+    /// Create a sorted array of cells to search in order of distance. Since all cells are the same
+    /// size, the index only needs to understand the relative positions of the cells.
+    fn get_search_order(cell_info: &CeleryCellInfo) -> Vec<DistanceIndex> {
+        let sq = |x: f64| x * x;
+
+        // The square of the Euclidean distance. There's no need to take the square root, since the
+        // distance is only used for sorting.
+        let distance = |i: i32, j: i32, k: i32| {
+            sq((i as f64) * cell_info.x_cell_size)
+                + sq((j as f64) * cell_info.y_cell_size)
+                + sq((k as f64) * cell_info.z_cell_size)
+        };
+
+        // The maximum index for a cell in a single dimension.
+        let max_index: i32 = cell_info.cells_per_dimension as i32 - 1;
+
+        let cb = |x: i32| x * x * x;
+        let mut search_order = Vec::with_capacity(cb(2 * max_index + 1) as usize);
+
+        // TODO: Maybe find a more elegant way to store this information. The point is that the
+        // same cell is always the closest.
+        search_order.push(DistanceIndex {
+            distance: -1.0,
+            i: 0,
+            j: 0,
+            k: 0,
+        });
+
+        // Index the cells that touch a single corner.
+        for i in 0..max_index {
+            // TODO: Put the i-only stuff here.
+            for j in 0..max_index {
+                // TODO: Put the j-only stuff here.
+                for k in 0..max_index {
+                    let dist = distance(i, j, k);
+
+                    search_order.push(DistanceIndex {
+                        distance: dist,
+                        i: i + 1,
+                        j: j + 1,
+                        k: k + 1,
+                    });
+
+                    search_order.push(DistanceIndex {
+                        distance: dist,
+                        i: i + 1,
+                        j: j + 1,
+                        k: -k - 1,
+                    });
+
+                    search_order.push(DistanceIndex {
+                        distance: dist,
+                        i: i + 1,
+                        j: -j - 1,
+                        k: k + 1,
+                    });
+
+                    search_order.push(DistanceIndex {
+                        distance: dist,
+                        i: -i - 1,
+                        j: j + 1,
+                        k: k + 1,
+                    });
+
+                    search_order.push(DistanceIndex {
+                        distance: dist,
+                        i: i + 1,
+                        j: -j - 1,
+                        k: -k - 1,
+                    });
+
+                    search_order.push(DistanceIndex {
+                        distance: dist,
+                        i: -i - 1,
+                        j: j + 1,
+                        k: -k - 1,
+                    });
+
+                    search_order.push(DistanceIndex {
+                        distance: dist,
+                        i: -i - 1,
+                        j: -j - 1,
+                        k: k + 1,
+                    });
+
+                    search_order.push(DistanceIndex {
+                        distance: dist,
+                        i: -i - 1,
+                        j: -j - 1,
+                        k: -k - 1,
+                    });
+                }
+            }
+        }
+
+        // TODO: This can actually be put in an earlier loop.
+        // Index the cells that share an edge in the z-axis.
+        for i in 0..max_index {
+            for j in 0..max_index {
+                let dist = distance(i, j, 0);
+
+                search_order.push(DistanceIndex {
+                    distance: dist,
+                    i: i + 1,
+                    j: j + 1,
+                    k: 0,
+                });
+
+                search_order.push(DistanceIndex {
+                    distance: dist,
+                    i: i + 1,
+                    j: -j - 1,
+                    k: 0,
+                });
+
+                search_order.push(DistanceIndex {
+                    distance: dist,
+                    i: -i - 1,
+                    j: j + 1,
+                    k: 0,
+                });
+
+                search_order.push(DistanceIndex {
+                    distance: dist,
+                    i: -i - 1,
+                    j: -j - 1,
+                    k: 0,
+                });
+            }
+        }
+
+        // Index the cells that share an edge in the y-axis.
+        for i in 0..max_index {
+            for k in 0..max_index {
+                let dist = distance(i, 0, k);
+
+                search_order.push(DistanceIndex {
+                    distance: dist,
+                    i: i + 1,
+                    j: 0,
+                    k: k + 1,
+                });
+
+                search_order.push(DistanceIndex {
+                    distance: dist,
+                    i: i + 1,
+                    j: 0,
+                    k: -k - 1,
+                });
+
+                search_order.push(DistanceIndex {
+                    distance: dist,
+                    i: -i - 1,
+                    j: 0,
+                    k: k + 1,
+                });
+
+                search_order.push(DistanceIndex {
+                    distance: dist,
+                    i: -i - 1,
+                    j: 0,
+                    k: -k - 1,
+                });
+            }
+        }
+
+        // Index the cells that share an edge in the x-axis.
+        for j in 0..max_index {
+            for k in 0..max_index {
+                let dist = distance(0, j, k);
+
+                search_order.push(DistanceIndex {
+                    distance: dist,
+                    i: 0,
+                    j: j + 1,
+                    k: k + 1,
+                });
+
+                search_order.push(DistanceIndex {
+                    distance: dist,
+                    i: 0,
+                    j: j + 1,
+                    k: -k - 1,
+                });
+
+                search_order.push(DistanceIndex {
+                    distance: dist,
+                    i: 0,
+                    j: -j - 1,
+                    k: k + 1,
+                });
+
+                search_order.push(DistanceIndex {
+                    distance: dist,
+                    i: 0,
+                    j: -j - 1,
+                    k: -k - 1,
+                });
+            }
+        }
+
+        // TODO: This can actually be put in an earlier loop.
+        // Index the cells that are offset only by the x-coordinate.
+        for i in 0..max_index {
+            let dist = distance(i, 0, 0);
+
+            search_order.push(DistanceIndex {
+                distance: dist,
+                i: i + 1,
+                j: 0,
+                k: 0,
+            });
+
+            search_order.push(DistanceIndex {
+                distance: dist,
+                i: -i - 1,
+                j: 0,
+                k: 0,
+            });
+        }
+
+        // Index the cells that are offset only by the y-coordinate.
+        for j in 0..max_index {
+            let dist = distance(0, j, 0);
+
+            search_order.push(DistanceIndex {
+                distance: dist,
+                i: 0,
+                j: j + 1,
+                k: 0,
+            });
+
+            search_order.push(DistanceIndex {
+                distance: dist,
+                i: 0,
+                j: -j - 1,
+                k: 0,
+            });
+        }
+
+        // Index the cells that are offset only by the z-coordinate.
+        for k in 0..max_index {
+            let dist = distance(0, 0, k);
+
+            search_order.push(DistanceIndex {
+                distance: dist,
+                i: 0,
+                j: 0,
+                k: k + 1,
+            });
+
+            search_order.push(DistanceIndex {
+                distance: dist,
+                i: 0,
+                j: 0,
+                k: -k - 1,
+            });
+        }
+
+        // Now, sort the search order list by closest distance. Now, the "search geometry" for the
+        // first few cells is encoded in the search order.
+        search_order.sort_unstable();
+
+        search_order
     }
 }
 
