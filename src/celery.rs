@@ -13,7 +13,7 @@ const CELL_DENSITY: f64 = 1.25;
 /// distance when searching for neighbors.
 ///
 /// The distance between two cells is always determined by the relative cell positions, so we can
-/// pre-compute that information for cell relationships that are likely to be compared often.
+/// pre-compute that information for each possible cell relationship.
 #[derive(Debug, Default)]
 struct DistanceIndex {
     distance: f64,
@@ -383,7 +383,7 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
         let mut search_order = Vec::with_capacity(cb(2 * max_index + 1) as usize);
 
         // TODO: Maybe find a more elegant way to store this information. The point is that the
-        // same cell is always the closest.
+        // cell is always closest to itself.
         search_order.push(DistanceIndex {
             distance: -1.0,
             i: 0,
@@ -391,7 +391,7 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
             k: 0,
         });
 
-        // Index the cells that touch a single corner.
+        // Index the cells that are offset in the x, y, and z coordinates.
         for i in 0..max_index {
             // TODO: Put the i-only stuff here.
             for j in 0..max_index {
@@ -459,7 +459,7 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
         }
 
         // TODO: This can actually be put in an earlier loop.
-        // Index the cells that share an edge in the z-axis.
+        // Index the cells that are offset in the x and y coordinates.
         for i in 0..max_index {
             for j in 0..max_index {
                 let dist = distance(i, j, 0);
@@ -494,7 +494,7 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
             }
         }
 
-        // Index the cells that share an edge in the y-axis.
+        // Index the cells that are offset in the x and z coordinates.
         for i in 0..max_index {
             for k in 0..max_index {
                 let dist = distance(i, 0, k);
@@ -529,7 +529,7 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
             }
         }
 
-        // Index the cells that share an edge in the x-axis.
+        // Index the cells that are offset in the y and z coordinates.
         for j in 0..max_index {
             for k in 0..max_index {
                 let dist = distance(0, j, k);
@@ -622,8 +622,7 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
             });
         }
 
-        // Now, sort the search order list by closest distance. Now, the "search geometry" for the
-        // first few cells is encoded in the search order.
+        // Now, sort the search order list by closest distance.
         search_order.sort_unstable();
 
         search_order
