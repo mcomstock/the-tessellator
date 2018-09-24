@@ -308,7 +308,7 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
 
         // Initialize the index map.
         for i in 0..size {
-            index_map[i] = i;
+            index_map.push(i);
         }
 
         index_map.sort_unstable_by(|a, b| cells[*a].cmp(&cells[*b]));
@@ -632,6 +632,7 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
 #[cfg(test)]
 mod tests {
     use super::{Celery, CeleryPoint, DistanceIndex, ToCeleryPoint};
+    use std::vec::Vec;
 
     #[derive(Debug, Default)]
     struct TestPoint(f64, f64, f64);
@@ -684,5 +685,16 @@ mod tests {
         assert!(!(di3 == di2));
         assert!(!(di3 <= di2));
         assert!(!(di3 < di2));
+    }
+
+    #[test]
+    fn create_celery() {
+        let pts = vec!(
+            TestPoint(1.2, 3.4, 8.3),
+            TestPoint(4.2, 7.3, 2.7),
+            TestPoint(0.3, 1.7, 9.0),
+        );
+
+        Celery::new(&pts);
     }
 }
