@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::cmp::{min, Ordering};
+use std::cmp::{max, min, Ordering};
 use std::f64;
 use std::vec::Vec;
 
@@ -198,7 +198,7 @@ impl CeleryCellInfo {
 
 /// A 3-dimensional cell array, designed for quickly finding nearby points in order of distance.
 #[derive(Debug)]
-struct Celery<'a, PointType: ToCeleryPoint + Default + 'a> {
+pub struct Celery<'a, PointType: ToCeleryPoint + Default + 'a> {
     /// The points stored in the cell array.
     points: &'a [PointType],
     /// The cell index of each point. The cell index corresponds to the point in `points` with the
@@ -231,13 +231,13 @@ struct Celery<'a, PointType: ToCeleryPoint + Default + 'a> {
 
 impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
     /// Create a cell array from a slice of points.
-    fn new(pts: &'a [PointType]) -> Celery<PointType> {
+    pub fn new(pts: &'a [PointType]) -> Celery<PointType> {
         let bounds = CeleryBounds::new(pts);
         let cell_info = CeleryCellInfo::new(pts, &bounds);
 
         let cells = Celery::get_cells(pts, &bounds, &cell_info);
         let sorted_indices = Celery::get_sorted_indices(pts, &cells);
-        let delimiters = Celery::get_delimiters(pts, &cells, &sorted_indices, &bounds, &cell_info);
+        let delimiters = Celery::<PointType>::get_delimiters(&cells, &sorted_indices, &cell_info);
         let search_order = Celery::<PointType>::get_search_order(&cell_info);
 
         Celery::<PointType> {
@@ -253,7 +253,8 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
 
     /// Get the x-index of the cell from an x-coordinate.
     fn get_x_cell_index(x: f64, bounds: &CeleryBounds, cell_info: &CeleryCellInfo) -> usize {
-        // TODO: Is this first condition necessary?
+        // This is necessary because of the potential for floating point error, placing the
+        // coordinate just outside the bounds.
         if x >= bounds.x_max {
             cell_info.cells_per_dimension - 1
         } else {
@@ -264,7 +265,8 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
 
     /// Get the y-index of the cell from an y-coordinate.
     fn get_y_cell_index(y: f64, bounds: &CeleryBounds, cell_info: &CeleryCellInfo) -> usize {
-        // TODO: Is this first condition necessary?
+        // This is necessary because of the potential for floating point error, placing the
+        // coordinate just outside the bounds.
         if y >= bounds.y_max {
             cell_info.cells_per_dimension - 1
         } else {
@@ -275,7 +277,8 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
 
     /// Get the z-index of the cell from an z-coordinate.
     fn get_z_cell_index(z: f64, bounds: &CeleryBounds, cell_info: &CeleryCellInfo) -> usize {
-        // TODO: Is this first condition necessary?
+        // This is necessary because of the potential for floating point error, placing the
+        // coordinate just outside the bounds.
         if z >= bounds.z_max {
             cell_info.cells_per_dimension - 1
         } else {
@@ -332,10 +335,8 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
 
     /// Get the delimiters for the sorted cells.
     fn get_delimiters(
-        pts: &'a [PointType],
         cells: &Vec<usize>,
         sorted_indices: &Vec<usize>,
-        bounds: &CeleryBounds,
         cell_info: &CeleryCellInfo,
     ) -> Vec<usize> {
         let num_points = cells.len();
@@ -641,12 +642,134 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
 
         search_order
     }
+
+    /// Get the smaller of two floating point numbers. When in doubt, return the second one.
+    fn min_float(a: f64, b: f64) -> f64 {
+        if a < b {
+            a
+        } else {
+            b
+        }
+    }
+
+    /// Get the larger of two floating point numbers. When in doubt, return the second one.
+    fn max_float(a: f64, b: f64) -> f64 {
+        if a > b {
+            a
+        } else {
+            b
+        }
+    }
+
+    /// Check whether any part of a cell is within the specified radius of a given point.
+    // TODO: This could probably be refactored.
+    fn check_cell_in_range(
+        &self,
+        x: f64,
+        y: f64,
+        z: f64,
+        radius: f64,
+        x_index: usize,
+        y_index: usize,
+        z_index: usize,
+    ) -> bool {
+        let sq = |x: f64| x * x;
+
+        // The square of the Euclidean distance. There's no need to take the square root, since we
+        // can just compare the squared values.
+        let distance_sq = |i: i32, j: i32, k: i32| {
+            sq(i as f64 * self.cell_info.x_cell_size)
+                + sq(j as f64 * self.cell_info.y_cell_size)
+                + sq(k as f64 * self.cell_info.z_cell_size)
+        };
+
+        let offset = |coord: usize, index: usize| max(0, (coord as i32 - index as i32).abs() - 1);
+
+        distance_sq(
+            offset(
+                Celery::<PointType>::get_x_cell_index(x, &self.bounds, &self.cell_info),
+                x_index,
+            ),
+            offset(
+                Celery::<PointType>::get_y_cell_index(y, &self.bounds, &self.cell_info),
+                y_index,
+            ),
+            offset(
+                Celery::<PointType>::get_z_cell_index(z, &self.bounds, &self.cell_info),
+                z_index,
+            ),
+        ) <= radius * radius
+    }
+
+    /// Given 3-D coordinates and a radius, finds all cells within the radius of the coordinates.
+    /// Returns a vector of indices to those cells.
+    pub fn find_cells_in_radius(&self, x: f64, y: f64, z: f64, radius: f64) -> Vec<usize> {
+        let x_low = Celery::<PointType>::max_float(x - radius, self.bounds.x_min);
+        let y_low = Celery::<PointType>::max_float(y - radius, self.bounds.y_min);
+        let z_low = Celery::<PointType>::max_float(z - radius, self.bounds.z_min);
+
+        let x_high = Celery::<PointType>::min_float(x - radius, self.bounds.x_max);
+        let y_high = Celery::<PointType>::min_float(y - radius, self.bounds.y_max);
+        let z_high = Celery::<PointType>::min_float(z - radius, self.bounds.z_max);
+
+        let x_min_index =
+            Celery::<PointType>::get_x_cell_index(x_low, &self.bounds, &self.cell_info);
+        let y_min_index =
+            Celery::<PointType>::get_y_cell_index(y_low, &self.bounds, &self.cell_info);
+        let z_min_index =
+            Celery::<PointType>::get_z_cell_index(z_low, &self.bounds, &self.cell_info);
+
+        let x_max_index =
+            Celery::<PointType>::get_x_cell_index(x_high, &self.bounds, &self.cell_info);
+        let y_max_index =
+            Celery::<PointType>::get_y_cell_index(y_high, &self.bounds, &self.cell_info);
+        let z_max_index =
+            Celery::<PointType>::get_z_cell_index(z_high, &self.bounds, &self.cell_info);
+
+        let mut cell_indices = Vec::new();
+
+        for i in x_min_index..=x_max_index {
+            for j in y_min_index..=y_max_index {
+                for k in z_min_index..=z_max_index {
+                    // Since we search through cells in a grid, some cells, such as corners, might
+                    // lie outside the radius.
+                    if self.check_cell_in_range(x, y, z, radius, i, j, k) {
+                        let cell_index =
+                            Celery::<PointType>::get_cell_from_indices(i, j, k, &self.cell_info);
+                        cell_indices.push(cell_index);
+                    }
+                }
+            }
+        }
+
+        cell_indices
+    }
+}
+
+/// Used to search outward from a point to incrementally find the neighbors in approximate order of
+/// distance.
+#[derive(Debug)]
+pub struct ExpandingSearch<'b, 'a: 'b, PointType: ToCeleryPoint + Default + 'a> {
+    /// The cell array to search over.
+    celery: &'b Celery<'a, PointType>,
+
+    /// The last search index that was searched.
+    last_search_index: usize,
+
+    /// The x-index of the cell containing the point.
+    x_cell_index: usize,
+    /// The y-index of the cell containing the point.
+    y_cell_index: usize,
+    /// The z-index of the cell containing the point.
+    z_cell_index: usize,
+
+    /// Keeps track of whether the search is complete.
+    done: bool,
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Celery, CeleryPoint, DistanceIndex, ToCeleryPoint};
-    use std::vec::Vec;
 
     #[derive(Debug, Default)]
     struct TestPoint(f64, f64, f64);
@@ -703,11 +826,11 @@ mod tests {
 
     #[test]
     fn create_celery() {
-        let pts = vec!(
+        let pts = vec![
             TestPoint(1.2, 3.4, 8.3),
             TestPoint(4.2, 7.3, 2.7),
             TestPoint(0.3, 1.7, 9.0),
-        );
+        ];
 
         Celery::new(&pts);
     }
