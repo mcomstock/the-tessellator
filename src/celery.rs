@@ -23,6 +23,9 @@ use std::vec::Vec;
 // TODO: Experiment with different values
 const CELL_DENSITY: f64 = 1.25;
 
+/// For these purposes, the simplest implementation of a 3-D point.
+type CeleryPoint = (f64, f64, f64);
+
 /// Contains a combination of distance information and indices to a cell. Used for sorting cells by
 /// distance when searching for neighbors.
 ///
@@ -65,14 +68,6 @@ impl Ord for DistanceIndex {
     }
 }
 
-/// A simple implementation of a point in 3-D space.
-#[derive(Debug, Default)]
-pub struct CeleryPoint {
-    x: f64,
-    y: f64,
-    z: f64,
-}
-
 /// A trait to convert some point-containing data into a CeleryPoint so that the Celery can
 /// perform arithmetic on it.
 pub trait ToCeleryPoint {
@@ -108,27 +103,27 @@ impl CeleryBounds {
         let mut zmax = f64::MIN;
 
         for p in pts {
-            let cp = p.to_celery_point();
+            let (x, y, z) = p.to_celery_point();
 
-            if cp.x < xmin {
-                xmin = cp.x
+            if x < xmin {
+                xmin = x
             }
-            if cp.x > xmax {
-                xmax = cp.x
-            }
-
-            if cp.y < ymin {
-                ymin = cp.y
-            }
-            if cp.y > ymax {
-                ymax = cp.y
+            if x > xmax {
+                xmax = x
             }
 
-            if cp.z < zmin {
-                zmin = cp.z
+            if y < ymin {
+                ymin = y
             }
-            if cp.z > zmax {
-                zmax = cp.z
+            if y > ymax {
+                ymax = y
+            }
+
+            if z < zmin {
+                zmin = z
+            }
+            if z > zmax {
+                zmax = z
             }
         }
 
@@ -294,10 +289,11 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
     }
 
     /// Get the cell a point belongs in.
-    fn get_cell(pt: CeleryPoint, bounds: &CeleryBounds, cell_info: &CeleryCellInfo) -> usize {
-        let x_index = Celery::<PointType>::get_x_cell_index(pt.x, bounds, cell_info);
-        let y_index = Celery::<PointType>::get_y_cell_index(pt.y, bounds, cell_info);
-        let z_index = Celery::<PointType>::get_z_cell_index(pt.z, bounds, cell_info);
+    fn get_cell(pt: &PointType, bounds: &CeleryBounds, cell_info: &CeleryCellInfo) -> usize {
+        let (x, y, z) = pt.to_celery_point();
+        let x_index = Celery::<PointType>::get_x_cell_index(x, bounds, cell_info);
+        let y_index = Celery::<PointType>::get_y_cell_index(y, bounds, cell_info);
+        let z_index = Celery::<PointType>::get_z_cell_index(z, bounds, cell_info);
 
         Celery::<PointType>::get_cell_from_indices(x_index, y_index, z_index, cell_info)
     }
@@ -311,8 +307,7 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
         let mut cells = Vec::with_capacity(pts.len());
 
         for pt in pts {
-            let cpt = pt.to_celery_point();
-            cells.push(Celery::<PointType>::get_cell(cpt, bounds, cell_info));
+            cells.push(Celery::<PointType>::get_cell(pt, bounds, cell_info));
         }
 
         cells
@@ -748,13 +743,17 @@ impl<'a, PointType: ToCeleryPoint + Default> Celery<'a, PointType> {
 
 /// Used to search outward from a point to incrementally find the neighbors in approximate order of
 /// distance.
+///
+/// Note: Unlike other aspects of the cell array, this struct stores state by self-mutating and is
+/// therefore not well-suited to concurrency. However, concurrent operations could be performed
+/// with separate expanding searches.
 #[derive(Debug)]
 pub struct ExpandingSearch<'b, 'a: 'b, PointType: ToCeleryPoint + Default + 'a> {
     /// The cell array to search over.
     celery: &'b Celery<'a, PointType>,
 
     /// The last search index that was searched.
-    last_search_index: usize,
+    current_search_index: usize,
 
     /// The x-index of the cell containing the point.
     x_cell_index: usize,
@@ -767,6 +766,89 @@ pub struct ExpandingSearch<'b, 'a: 'b, PointType: ToCeleryPoint + Default + 'a> 
     done: bool,
 }
 
+impl<'b, 'a: 'b, PointType: ToCeleryPoint + Default + 'a> ExpandingSearch<'b, 'a, PointType> {
+    /// Create a new expanding search from a cell array and a point to search around.
+    pub fn new(
+        celery: &'b Celery<'a, PointType>,
+        x: f64,
+        y: f64,
+        z: f64,
+    ) -> ExpandingSearch<'b, 'a, PointType> {
+        let x_cell_index =
+            Celery::<PointType>::get_x_cell_index(x, &celery.bounds, &celery.cell_info);
+        let y_cell_index =
+            Celery::<PointType>::get_y_cell_index(y, &celery.bounds, &celery.cell_info);
+        let z_cell_index =
+            Celery::<PointType>::get_z_cell_index(z, &celery.bounds, &celery.cell_info);
+
+        ExpandingSearch::<'b, 'a, PointType> {
+            celery: celery,
+            current_search_index: 0,
+            x_cell_index: x_cell_index,
+            y_cell_index: y_cell_index,
+            z_cell_index: z_cell_index,
+            done: false,
+        }
+    }
+
+    /// Search outward, adding all points from previously unsearched cells within the specified
+    /// maximum radius. The return value is a list of indices into the points stored in the Celery.
+    /// If the search reaches the maximum radius, the search ends and the `done` flag is set.
+    pub fn expand(&mut self, max_radius: f64, cells_to_add: usize) -> Vec<usize> {
+        // A potential optimization is to initialize the Vec to have size of about
+        // cells_to_add * CELL_DENSITY.
+        let mut point_indices = Vec::new();
+        let search_order = &self.celery.search_order;
+        let search_order_size = search_order.len();
+        let cells_per_dimension = *&self.celery.cell_info.cells_per_dimension as i32;
+
+        for _ in 0..cells_to_add {
+            let DistanceIndex { i, j, k, distance } = search_order[self.current_search_index];
+
+            // The expanding search is done if all the points have been searched, or if the search has
+            // exceeded the specified radius.
+            if self.current_search_index >= search_order_size || distance > max_radius {
+                self.done = true;
+                return point_indices;
+            }
+
+            let x_to_search = self.x_cell_index as i32 + i;
+            let y_to_search = self.y_cell_index as i32 + j;
+            let z_to_search = self.z_cell_index as i32 + k;
+
+            // If the particular cell doesn't exist (i.e. we are attempting to search of of
+            // bounds), just skip it.
+            if x_to_search < 0
+                || x_to_search >= cells_per_dimension
+                || y_to_search < 0
+                || y_to_search >= cells_per_dimension
+                || z_to_search < 0
+                || z_to_search >= cells_per_dimension
+            {
+                continue;
+            }
+
+            let cell_index = Celery::<PointType>::get_cell_from_indices(
+                x_to_search as usize,
+                y_to_search as usize,
+                z_to_search as usize,
+                &self.celery.cell_info,
+            );
+
+            let cell_begin = self.celery.delimiters[cell_index];
+            let cell_end = self.celery.delimiters[cell_index + 1];
+
+            for point_index in cell_begin..cell_end {
+                point_indices.push(point_index);
+            }
+
+            self.current_search_index += 1;
+        }
+
+        return point_indices;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Celery, CeleryPoint, DistanceIndex, ToCeleryPoint};
@@ -776,11 +858,7 @@ mod tests {
 
     impl ToCeleryPoint for TestPoint {
         fn to_celery_point(&self) -> CeleryPoint {
-            CeleryPoint {
-                x: self.0,
-                y: self.1,
-                z: self.2,
-            }
+            (self.0, self.1, self.2)
         }
     }
 
