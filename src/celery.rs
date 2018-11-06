@@ -24,7 +24,7 @@ use std::vec::Vec;
 const CELL_DENSITY: f64 = 1.25;
 
 /// For these purposes, the simplest implementation of a 3-D point.
-type CeleryPoint = (f64, f64, f64);
+pub type CeleryPoint = (f64, f64, f64);
 
 /// Contains a combination of distance information and indices to a cell. Used for sorting cells by
 /// distance when searching for neighbors.
@@ -195,10 +195,10 @@ impl CeleryCellInfo {
 #[derive(Debug)]
 pub struct Celery<'a, PointType: ToCeleryPoint + Default + 'a> {
     /// The points stored in the cell array.
-    points: &'a [PointType],
+    pub points: &'a [PointType],
     /// The cell index of each point. The cell index corresponds to the point in `points` with the
     /// same index.
-    cells: Vec<usize>,
+    pub cells: Vec<usize>,
     /// The delimiters for the sorted cells. The delimiter vector is indexed by cell number, and
     /// the value at that index is the index in `sorted_indices` that corresponds to the first
     /// point in that cell. Every following point in `sorted_indices` is also in that cell, until
@@ -211,9 +211,9 @@ pub struct Celery<'a, PointType: ToCeleryPoint + Default + 'a> {
     /// `sorted_indices`, so this method even works for the last cell. If the last cell or several
     /// of the last cells are empty, they are given that index as well, so the method used above
     /// would loop over an empty list.
-    delimiters: Vec<usize>,
+    pub delimiters: Vec<usize>,
     /// Indices into the points slice, sorted in order of the cell the point is in.
-    sorted_indices: Vec<usize>,
+    pub sorted_indices: Vec<usize>,
 
     /// The bounds for the space contained in the Celery.
     bounds: CeleryBounds,
@@ -838,7 +838,8 @@ impl<'b, 'a: 'b, PointType: ToCeleryPoint + Default + 'a> ExpandingSearch<'b, 'a
             let cell_begin = self.celery.delimiters[cell_index];
             let cell_end = self.celery.delimiters[cell_index + 1];
 
-            for point_index in cell_begin..cell_end {
+            for sorted_index in cell_begin..cell_end {
+                let point_index = self.celery.sorted_indices[sorted_index];
                 point_indices.push(point_index);
             }
 
@@ -851,7 +852,12 @@ impl<'b, 'a: 'b, PointType: ToCeleryPoint + Default + 'a> ExpandingSearch<'b, 'a
 
 #[cfg(test)]
 mod tests {
+    extern crate rand;
+
+    use self::rand::{thread_rng, Rng};
     use super::{Celery, CeleryPoint, DistanceIndex, ToCeleryPoint};
+    use std::collections::HashSet;
+    use std::iter::FromIterator;
 
     #[derive(Debug, Default)]
     struct TestPoint(f64, f64, f64);
@@ -860,6 +866,75 @@ mod tests {
         fn to_celery_point(&self) -> CeleryPoint {
             (self.0, self.1, self.2)
         }
+    }
+
+    // Generate the specified number of random points.
+    fn generate_random_points(
+        xmin: f64,
+        xmax: f64,
+        ymin: f64,
+        ymax: f64,
+        zmin: f64,
+        zmax: f64,
+        num: usize,
+    ) -> Vec<TestPoint> {
+        let mut points = Vec::with_capacity(num);
+        let mut rng = thread_rng();
+
+        for _ in 0..num {
+            let x: f64 = rng.gen_range(xmin, xmax);
+            let y: f64 = rng.gen_range(ymin, ymax);
+            let z: f64 = rng.gen_range(zmin, zmax);
+
+            points.push(TestPoint(x, y, z));
+        }
+
+        points
+    }
+
+    // Check that the delimiters actually point to the correct parts of sorted_indices to divide it
+    // into cells.
+    fn check_delimiters(cells: Vec<usize>, sorted_indices: Vec<usize>, delimiters: Vec<usize>) {
+        // The first cell should always start at 0.
+        assert_eq!(delimiters[0], 0);
+
+        // The last delimiter should always point to the end.
+        assert_eq!(delimiters[delimiters.len() - 1], sorted_indices.len());
+
+        // The sorted indices should be distinct (one point can't be in two cells).
+        let unique_indices = HashSet::<usize>::from_iter(sorted_indices.iter().cloned());
+        assert_eq!(sorted_indices.len(), unique_indices.len());
+
+        // In this loop, `i` is the cell we are looking at. Note that we start at cell 1, since
+        // cell 0 is checked above.
+        for i in 1..delimiters.len() {
+            // This condition checks that the delimiter does not accidentally point to the middle of
+            // the cell. The previous point must be in an earlier cell, otherwise the order has
+            // gotten mixed up somehow.
+            // TODO: In the C++ implementation, I allowed this if the previous cell was empty. Was
+            // that correct?
+            assert!(delimiters[i] == 0 || i > cells[sorted_indices[delimiters[i] - 1]]);
+
+            // If there are no more points, the rest of the cells should point to the end of the
+            // sorted indices.
+            if delimiters[i] == sorted_indices.len() {
+                for j in i + 1..delimiters.len() {
+                    assert_eq!(delimiters[j], sorted_indices.len());
+                }
+
+                return;
+            }
+
+            // If there are more points, check the the delimiter for the cell points to the correct
+            // location in sorted_indices: either a point that is in the cell, or, if the cell is
+            // empty, a later cell.
+            let same_cell = i == cells[sorted_indices[delimiters[i]]];
+            let greater_cell = i > cells[sorted_indices[delimiters[i]]];
+            let empty_cell = delimiters[i] == delimiters[i + 1];
+            assert!(same_cell || (greater_cell || empty_cell));
+        }
+
+        return;
     }
 
     #[test]
@@ -911,5 +986,32 @@ mod tests {
         ];
 
         Celery::new(&pts);
+    }
+
+    #[test]
+    fn insert_one_point() {
+        let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1);
+        let celery = Celery::new(&pts);
+
+        assert_eq!(celery.points.len(), 1);
+        check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
+    }
+
+    #[test]
+    fn insert_one_thousand_points() {
+        let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1000);
+        let celery = Celery::new(&pts);
+
+        assert_eq!(celery.points.len(), 1000);
+        check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
+    }
+
+    #[test]
+    fn insert_one_million_points() {
+        let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1000000);
+        let celery = Celery::new(&pts);
+
+        assert_eq!(celery.points.len(), 1000000);
+        check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
     }
 }
