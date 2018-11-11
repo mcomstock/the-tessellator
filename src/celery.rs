@@ -159,6 +159,7 @@ struct CeleryCellInfo {
     z_inverse_cell_size: f64,
 
     /// The number of cells in each dimension.
+    /// Should be floor(cbrt(total points / CELL_DENSITY)) + 1.
     cells_per_dimension: usize,
 }
 
@@ -211,6 +212,8 @@ pub struct Celery<'a, PointType: ToCeleryPoint + Default + 'a> {
     /// `sorted_indices`, so this method even works for the last cell. If the last cell or several
     /// of the last cells are empty, they are given that index as well, so the method used above
     /// would loop over an empty list.
+    ///
+    /// The length is the total number of cells plus one: (cells_per_dimension^3) + 1.
     pub delimiters: Vec<usize>,
     /// Indices into the points slice, sorted in order of the cell the point is in.
     pub sorted_indices: Vec<usize>,
@@ -221,6 +224,9 @@ pub struct Celery<'a, PointType: ToCeleryPoint + Default + 'a> {
     cell_info: CeleryCellInfo,
 
     /// The order of relative cell positions to search through.
+    /// The length should be (((cells_per_dimension - 1) * 2) + 1)^3.
+    // TODO: Think about making a function to compute this, rather than precomputing for very large
+    // numbers of points.
     search_order: Vec<DistanceIndex>,
 }
 
@@ -761,9 +767,6 @@ pub struct ExpandingSearch<'b, 'a: 'b, PointType: ToCeleryPoint + Default + 'a> 
     y_cell_index: usize,
     /// The z-index of the cell containing the point.
     z_cell_index: usize,
-
-    /// Keeps track of whether the search is complete.
-    done: bool,
 }
 
 impl<'b, 'a: 'b, PointType: ToCeleryPoint + Default + 'a> ExpandingSearch<'b, 'a, PointType> {
@@ -787,13 +790,12 @@ impl<'b, 'a: 'b, PointType: ToCeleryPoint + Default + 'a> ExpandingSearch<'b, 'a
             x_cell_index: x_cell_index,
             y_cell_index: y_cell_index,
             z_cell_index: z_cell_index,
-            done: false,
         }
     }
 
     /// Search outward, adding all points from previously unsearched cells within the specified
     /// maximum radius. The return value is a list of indices into the points stored in the Celery.
-    /// If the search reaches the maximum radius, the search ends and the `done` flag is set.
+    /// If the search reaches the maximum radius, the search ends.
     pub fn expand(&mut self, max_radius: f64, cells_to_add: usize) -> Vec<usize> {
         // A potential optimization is to initialize the Vec to have size of about
         // cells_to_add * CELL_DENSITY.
@@ -803,20 +805,25 @@ impl<'b, 'a: 'b, PointType: ToCeleryPoint + Default + 'a> ExpandingSearch<'b, 'a
         let cells_per_dimension = *&self.celery.cell_info.cells_per_dimension as i32;
 
         for _ in 0..cells_to_add {
-            let DistanceIndex { i, j, k, distance } = search_order[self.current_search_index];
-
-            // The expanding search is done if all the points have been searched, or if the search has
-            // exceeded the specified radius.
-            if self.current_search_index >= search_order_size || distance > max_radius {
-                self.done = true;
+            // Stop if all cells have been searched.
+            if self.current_search_index >= search_order_size {
                 return point_indices;
             }
+
+            let DistanceIndex { i, j, k, distance } = search_order[self.current_search_index];
+
+            // Stop if the search has gone beyond the maximum radius.
+            if distance > max_radius {
+                return point_indices;
+            }
+
+            self.current_search_index += 1;
 
             let x_to_search = self.x_cell_index as i32 + i;
             let y_to_search = self.y_cell_index as i32 + j;
             let z_to_search = self.z_cell_index as i32 + k;
 
-            // If the particular cell doesn't exist (i.e. we are attempting to search of of
+            // If the particular cell doesn't exist (i.e. we are attempting to search out of
             // bounds), just skip it.
             if x_to_search < 0
                 || x_to_search >= cells_per_dimension
@@ -842,8 +849,6 @@ impl<'b, 'a: 'b, PointType: ToCeleryPoint + Default + 'a> ExpandingSearch<'b, 'a
                 let point_index = self.celery.sorted_indices[sorted_index];
                 point_indices.push(point_index);
             }
-
-            self.current_search_index += 1;
         }
 
         return point_indices;
@@ -855,7 +860,7 @@ mod tests {
     extern crate rand;
 
     use self::rand::{thread_rng, Rng};
-    use super::{Celery, CeleryPoint, DistanceIndex, ToCeleryPoint};
+    use super::{Celery, CeleryPoint, DistanceIndex, ExpandingSearch, ToCeleryPoint};
     use std::collections::HashSet;
     use std::iter::FromIterator;
 
@@ -993,7 +998,37 @@ mod tests {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1);
         let celery = Celery::new(&pts);
 
+        assert_eq!(celery.cell_info.cells_per_dimension, 1);
+        assert_eq!(celery.search_order.len(), 1);
         assert_eq!(celery.points.len(), 1);
+        assert_eq!(celery.delimiters.len(), 2);
+
+        check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
+    }
+
+    #[test]
+    fn insert_one_point_large() {
+        let pts = generate_random_points(-1000.0, 500.0, -1000.0, 500.0, -1000.0, 500.0, 1);
+        let celery = Celery::new(&pts);
+
+        assert_eq!(celery.cell_info.cells_per_dimension, 1);
+        assert_eq!(celery.search_order.len(), 1);
+        assert_eq!(celery.points.len(), 1);
+        assert_eq!(celery.delimiters.len(), 2);
+
+        check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
+    }
+
+    #[test]
+    fn insert_one_point_oblong() {
+        let pts = generate_random_points(-5.0, -4.0, 12.0, 1000.0, -10000.0, 1.0, 1);
+        let celery = Celery::new(&pts);
+
+        assert_eq!(celery.cell_info.cells_per_dimension, 1);
+        assert_eq!(celery.search_order.len(), 1);
+        assert_eq!(celery.points.len(), 1);
+        assert_eq!(celery.delimiters.len(), 2);
+
         check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
     }
 
@@ -1002,7 +1037,37 @@ mod tests {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1000);
         let celery = Celery::new(&pts);
 
+        assert_eq!(celery.cell_info.cells_per_dimension, 10);
+        assert_eq!(celery.search_order.len(), 6859);
         assert_eq!(celery.points.len(), 1000);
+        assert_eq!(celery.delimiters.len(), 1001);
+
+        check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
+    }
+
+    #[test]
+    fn insert_one_thousand_points_large() {
+        let pts = generate_random_points(-1000.0, 500.0, -1000.0, 500.0, -1000.0, 500.0, 1000);
+        let celery = Celery::new(&pts);
+
+        assert_eq!(celery.cell_info.cells_per_dimension, 10);
+        assert_eq!(celery.search_order.len(), 6859);
+        assert_eq!(celery.points.len(), 1000);
+        assert_eq!(celery.delimiters.len(), 1001);
+
+        check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
+    }
+
+    #[test]
+    fn insert_one_thousand_points_oblong() {
+        let pts = generate_random_points(-5.0, -4.0, 12.0, 1000.0, -10000.0, 1.0, 1000);
+        let celery = Celery::new(&pts);
+
+        assert_eq!(celery.cell_info.cells_per_dimension, 10);
+        assert_eq!(celery.search_order.len(), 6859);
+        assert_eq!(celery.points.len(), 1000);
+        assert_eq!(celery.delimiters.len(), 1001);
+
         check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
     }
 
@@ -1011,7 +1076,137 @@ mod tests {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1000000);
         let celery = Celery::new(&pts);
 
+        assert_eq!(celery.cell_info.cells_per_dimension, 93);
+        assert_eq!(celery.search_order.len(), 6331625);
         assert_eq!(celery.points.len(), 1000000);
+        assert_eq!(celery.delimiters.len(), 804358);
+
         check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
+    }
+
+    #[test]
+    fn insert_one_million_points_large() {
+        let pts = generate_random_points(-1000.0, 500.0, -1000.0, 500.0, -1000.0, 500.0, 1000000);
+        let celery = Celery::new(&pts);
+
+        assert_eq!(celery.cell_info.cells_per_dimension, 93);
+        assert_eq!(celery.search_order.len(), 6331625);
+        assert_eq!(celery.points.len(), 1000000);
+        assert_eq!(celery.delimiters.len(), 804358);
+
+        check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
+    }
+
+    #[test]
+    fn insert_one_million_points_oblong() {
+        let pts = generate_random_points(-5.0, -4.0, 12.0, 1000.0, -10000.0, 1.0, 1000000);
+        let celery = Celery::new(&pts);
+
+        assert_eq!(celery.cell_info.cells_per_dimension, 93);
+        assert_eq!(celery.search_order.len(), 6331625);
+        assert_eq!(celery.points.len(), 1000000);
+        assert_eq!(celery.delimiters.len(), 804358);
+
+        check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
+    }
+
+    #[test]
+    fn expanding_search_center() {
+        let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 100);
+        let celery = Celery::new(&pts);
+        let mut expanding_search = ExpandingSearch::new(&celery, 0.5, 0.5, 0.5);
+
+        assert_eq!(celery.cell_info.cells_per_dimension, 5);
+        assert_eq!(celery.delimiters.len(), 126);
+        assert_eq!(celery.search_order.len(), 729);
+
+        assert_eq!(expanding_search.x_cell_index, 2);
+        assert_eq!(expanding_search.y_cell_index, 2);
+        assert_eq!(expanding_search.z_cell_index, 2);
+
+        let mut all_results = Vec::new();
+
+        for _ in 0..729 {
+            let mut search_results = expanding_search.expand(10.0, 1);
+
+            all_results.append(&mut search_results);
+        }
+
+        assert_eq!(all_results.len(), 100);
+
+        let last_search_result = expanding_search.expand(10.0, 1);
+        assert_eq!(last_search_result.len(), 0);
+
+        let huge_search_result = expanding_search.expand(10.0, 50);
+        assert_eq!(huge_search_result.len(), 0);
+    }
+
+    #[test]
+    fn expanding_search_corner() {
+        let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 100);
+        let celery = Celery::new(&pts);
+        let mut expanding_search = ExpandingSearch::new(&celery, 0.0, 0.0, 0.0);
+
+        assert_eq!(celery.cell_info.cells_per_dimension, 5);
+        assert_eq!(celery.delimiters.len(), 126);
+        assert_eq!(celery.search_order.len(), 729);
+
+        assert_eq!(expanding_search.x_cell_index, 0);
+        assert_eq!(expanding_search.y_cell_index, 0);
+        assert_eq!(expanding_search.z_cell_index, 0);
+
+        let mut all_results = Vec::new();
+
+        for _ in 0..729 {
+            let mut search_results = expanding_search.expand(10.0, 1);
+
+            all_results.append(&mut search_results);
+        }
+
+        assert_eq!(all_results.len(), 100);
+
+        let last_search_result = expanding_search.expand(10.0, 1);
+        assert_eq!(last_search_result.len(), 0);
+
+        let huge_search_result = expanding_search.expand(10.0, 50);
+        assert_eq!(huge_search_result.len(), 0);
+    }
+
+    #[test]
+    fn expanding_search_all_at_once() {
+        let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 100);
+        let celery = Celery::new(&pts);
+        let mut expanding_search = ExpandingSearch::new(&celery, 0.0, 0.0, 0.0);
+
+        assert_eq!(celery.cell_info.cells_per_dimension, 5);
+        assert_eq!(celery.delimiters.len(), 126);
+        assert_eq!(celery.search_order.len(), 729);
+
+        assert_eq!(expanding_search.x_cell_index, 0);
+        assert_eq!(expanding_search.y_cell_index, 0);
+        assert_eq!(expanding_search.z_cell_index, 0);
+
+        let search_results = expanding_search.expand(10.0, 729);
+
+        assert_eq!(search_results.len(), 100);
+    }
+
+    #[test]
+    fn expanding_search_more_than_all_at_once() {
+        let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 100);
+        let celery = Celery::new(&pts);
+        let mut expanding_search = ExpandingSearch::new(&celery, 0.0, 0.0, 0.0);
+
+        assert_eq!(celery.cell_info.cells_per_dimension, 5);
+        assert_eq!(celery.delimiters.len(), 126);
+        assert_eq!(celery.search_order.len(), 729);
+
+        assert_eq!(expanding_search.x_cell_index, 0);
+        assert_eq!(expanding_search.y_cell_index, 0);
+        assert_eq!(expanding_search.z_cell_index, 0);
+
+        let search_results = expanding_search.expand(10.0, 1000);
+
+        assert_eq!(search_results.len(), 100);
     }
 }
