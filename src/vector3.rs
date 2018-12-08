@@ -1,4 +1,5 @@
-// lib.rs --- Part of The Tessellator.
+// vector3.rs --- Implementation of the Vector3 class, a three-dimensional vector that implements a
+// number of mathematical operations.
 // Copyright (C) 2018 Maxfield Comstock
 
 // This program is free software: you can redistribute it and/or modify
@@ -14,14 +15,20 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-mod vector3;
-pub mod celery;
-pub mod polyhedron;
+/// A three-dimensional vector that implements a number of mathematical operations.
+#[derive(Debug, Default)]
+pub struct Vector3<Real: Default> {
+    x: Real,
+    y: Real,
+    z: Real,
+}
 
 #[cfg(test)]
 mod tests {
+    use super::Vector3;
+
     #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+    fn create_vector3() {
+        let _vector = Vector3::<f64>::default();
     }
 }

@@ -1,4 +1,4 @@
-// celery.rs --- Implementation of a basic 3-D cell array for The Tessellator
+// celery.rs --- An implementation of a basic 3-D cell array.
 // Copyright (C) 2018 Maxfield Comstock
 
 // This program is free software: you can redistribute it and/or modify
