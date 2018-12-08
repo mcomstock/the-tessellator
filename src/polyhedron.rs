@@ -15,7 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::vec::Vec;
+
 use vector3::Vector3;
+
+type Vector = Vector3<f64>;
 
 /// A half-edge structure. Two half-edges make up an edge in the polyhedron, each pointing to one
 /// of the two vertices that make up that edge.
@@ -51,14 +55,36 @@ struct FaceData {
     face_index: usize,
 
     /// The vector normal to the face.
-    weighted_normal: Vector3<f64>,
+    weighted_normal: Vector,
 }
 
 /// A cell created as the result of Voronoi tessellation. Most of the computation for the
 /// tessellation is done by this struct.
 #[derive(Debug, Default)]
 struct Polyhedron {
+    /// The index of the root edge of the polyhedron.
+    root_edge: Option<usize>,
 
+    /// The edges of the polyhedron. TODO: Consider using a memory arena/pool.
+    edges: Vec<HalfEdge>,
+    /// The vertices around the polyhedron. TODO: Consider using a memory arena/pool.
+    vertices: Vec<Vector>,
+    /// The faces of the polyhedron. TODO: Consider using a memory arena/pool.
+    faces: Vec<Face>,
+
+    /// The face data.
+    face_data: Vec<FaceData>,
+
+    /// A list of vertices to be deleted.
+    vertices_to_destroy: Vec<usize>,
+    /// A list of edges do be deleted.
+    edges_to_destroy: Vec<usize>,
+
+    /// The farthest vertex from the point.
+    max_distance_vertex: Option<usize>,
+
+    /// The farthest another point can be from the current point and still cut the polyhedron.
+    max_neighbor_distance: f64,
 }
 
 #[cfg(test)]
