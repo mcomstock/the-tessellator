@@ -1,6 +1,6 @@
 // polyhedron.rs --- Implementation of the Polyhedron class, which performs the actual Voronoi
 // calculations.
-// Copyright (C) 2018 Maxfield Comstock
+// Copyright (C) 2018-2019 Maxfield Comstock
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -58,6 +58,142 @@ struct FaceData {
     weighted_normal: Vector,
 }
 
+// In general, the faces will be referred to using single characters,
+// which are:
+//   Front         : F
+//   Right         : R
+//   Back          : B
+//   Left          : L
+//   Up (Top)      : U
+//   Down (Bottom) : D
+#[derive(Copy, Clone)]
+enum StartingFaces {
+    F = 0,
+    R = 1,
+    B = 2,
+    L = 3,
+    U = 4,
+    D = 5,
+}
+
+// Each vertex is written as the three faces it touches.
+// The overall layout of the cube is:
+//
+//    BUL-------BUR               +z
+//    /|        /|                |   +y
+//   / |       / |                |  /
+// FUL-------FUR |                | /
+//  |  |      |  |       -x_______|/_______+x
+//  | BDL-----|-BDR              /|
+//  | /       | /               / |
+//  |/        |/               /  |
+// FDL-------FDR             -y   |
+//                                -z
+#[derive(Copy, Clone)]
+enum StartingVertices {
+    FDL = 0,
+    FDR = 1,
+    FUR = 2,
+    FUL = 3,
+    BDL = 4,
+    BDR = 5,
+    BUR = 6,
+    BUL = 7,
+}
+
+#[derive(Copy, Clone)]
+enum StartingEdges {
+    // Front Face
+    //            FU
+    //    FUL <--------- FUR
+    //     |              ^
+    //     |              |
+    //  FL |              | FR
+    //     |              |
+    //     v              |
+    //    FDL ---------> FDR
+    //            FD
+    FU = 0,
+    FL = 1,
+    FD = 2,
+    FR = 3,
+
+    // Right Face
+    //            RU
+    //    FUR <--------- BUR
+    //     |              ^
+    //     |              |
+    //  RF |              | RB
+    //     |              |
+    //     v              |
+    //    FDR ---------> BDR
+    //            RD
+    RU = 4,
+    RF = 5,
+    RD = 6,
+    RB = 7,
+
+    // Back Face
+    //            BU
+    //    BUR <--------- BUL
+    //     |              ^
+    //     |              |
+    //  BR |              | BL
+    //     |              |
+    //     v              |
+    //    BDR ---------> BDL
+    //            BD
+    BU = 8,
+    BR = 9,
+    BD = 10,
+    BL = 11,
+
+    // Left Face
+    //            LU
+    //    BUL <--------- FUL
+    //     |              ^
+    //     |              |
+    //  LB |              | LF
+    //     |              |
+    //     v              |
+    //    BDL ---------> FDL
+    //            LD
+    LU = 12,
+    LB = 13,
+    LD = 14,
+    LF = 15,
+
+    // Up Face
+    //            UB
+    //    BUL <--------- BUR
+    //     |              ^
+    //     |              |
+    //  UL |              | UR
+    //     |              |
+    //     v              |
+    //    FUL ---------> FUR
+    //            UF
+    UF = 16,
+    UR = 17,
+    UB = 18,
+    UL = 19,
+
+    // Down Face
+    //            DB
+    //    BDL ---------> BDR
+    //     ^              |
+    //     |              |
+    //  DL |              | DR
+    //     |              |
+    //     |              V
+    //    FDL <--------- FDR
+    //            DF
+    DF = 20,
+    DL = 21,
+    DB = 22,
+    DR = 23,
+}
+
 /// A cell created as the result of Voronoi tessellation. Most of the computation for the
 /// tessellation is done by this struct.
 #[derive(Debug, Default)]
@@ -85,6 +221,41 @@ struct Polyhedron {
 
     /// The farthest another point can be from the current point and still cut the polyhedron.
     max_neighbor_distance: f64,
+}
+
+impl Polyhedron {
+    /// Construct the initial polyhedron as a cube.
+    fn build_cube(
+        &mut self,
+        x_min: f64,
+        y_min: f64,
+        z_min: f64,
+        x_max: f64,
+        y_max: f64,
+        z_max: f64,
+    ) {
+        // TODO: Perhaps add some optional verification.
+
+        let mut vertices = Vec::<Vector>::with_capacity(8);
+        let mut faces = Vec::<Face>::with_capacity(6);
+        let mut edges = Vec::<HalfEdge>::with_capacity(24);
+
+        let v = |x, y, z| Vector { x, y, z };
+
+        // Add each vertex in order, so that the index matches the one assigned in StartingFaces.
+        vertices.push(v(x_min, y_min, z_min));
+        vertices.push(v(x_max, y_min, z_min));
+        vertices.push(v(x_max, y_min, z_max));
+        vertices.push(v(x_min, y_min, z_max));
+        vertices.push(v(x_min, y_max, z_min));
+        vertices.push(v(x_max, y_max, z_min));
+        vertices.push(v(x_max, y_max, z_max));
+        vertices.push(v(x_min, y_max, z_max));
+
+        self.vertices = vertices;
+        self.faces = faces;
+        self.edges = edges;
+    }
 }
 
 #[cfg(test)]

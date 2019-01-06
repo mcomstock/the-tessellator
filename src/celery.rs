@@ -1,5 +1,5 @@
 // celery.rs --- An implementation of a basic 3-D cell array.
-// Copyright (C) 2018 Maxfield Comstock
+// Copyright (C) 2018-2019 Maxfield Comstock
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by

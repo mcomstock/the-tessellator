@@ -1,5 +1,5 @@
 // lib.rs --- Part of The Tessellator.
-// Copyright (C) 2018 Maxfield Comstock
+// Copyright (C) 2018-2019 Maxfield Comstock
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,6 +15,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 mod vector3;
+mod pool;
 pub mod celery;
 pub mod polyhedron;
 

@@ -1,6 +1,6 @@
 // vector3.rs --- Implementation of the Vector3 class, a three-dimensional vector that implements a
 // number of mathematical operations.
-// Copyright (C) 2018 Maxfield Comstock
+// Copyright (C) 2018-2019 Maxfield Comstock
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -18,9 +18,9 @@
 /// A three-dimensional vector that implements a number of mathematical operations.
 #[derive(Debug, Default)]
 pub struct Vector3<Real: Default> {
-    x: Real,
-    y: Real,
-    z: Real,
+    pub x: Real,
+    pub y: Real,
+    pub z: Real,
 }
 
 #[cfg(test)]
