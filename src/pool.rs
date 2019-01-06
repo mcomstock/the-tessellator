@@ -78,6 +78,42 @@ impl<T> Pool<T> {
             first: Option::None,
         }
     }
+
+    /// Add a value to the pool, and return the index where the value was added.
+    pub fn add(&mut self, value: T) -> usize {
+        match self.first {
+            // If there is an empty spot in the pool, use that.
+            Some(i) => {
+                // Update the first avaliable index.
+                self.first = match self.data[i] {
+                    PoolChunk::NextIndex(j) => Option::Some(j),
+                    // Note that there should never be a value in this case.
+                    // TODO: Add a debug check for that.
+                    _ => Option::None,
+                };
+
+                self.data[i] = PoolChunk::Value(value);
+                return i;
+            }
+
+            // If the pool is full, just add to the end.
+            None => {
+                self.data.push(PoolChunk::Value(value));
+                return self.data.len() - 1;
+            }
+        }
+    }
+
+    /// Remove the value at an index from the pool.
+    pub fn remove(&mut self, index: usize) {
+        let chunk = match self.first {
+            Some(i) => PoolChunk::NextIndex(i),
+            None => PoolChunk::End,
+        };
+
+        self.first = Option::Some(index);
+        self.data[index] = chunk;
+    }
 }
 
 /// An iterator for a pool, which skips over any empty values.
