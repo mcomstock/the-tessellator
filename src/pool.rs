@@ -29,12 +29,13 @@ pub enum PoolChunk<T> {
 
 /// A pool in memory for storing indexed data. It is basically a vector of chunks with an
 /// iterator implementation.
-#[derive(Debug,Default)]
+#[derive(Debug, Default)]
 pub struct Pool<T> {
     /// The vector that stores the actual data.
     data: Vec<PoolChunk<T>>,
 
-    /// The index of the first avaliable value, if there is one.
+    /// The index of the first empty chunk to replace, if there is one. Note that this is not
+    /// necessarily the empty chunk with the smallest index.
     first: Option<usize>,
 }
 
@@ -80,6 +81,10 @@ impl<T> Pool<T> {
     }
 
     /// Add a value to the pool, and return the index where the value was added.
+    // TODO: The pool in the C++ version would construct items in-place in memory. Unfortunately,
+    // I don't think there's a way to do that in Rust, although apparenty it might be added soon.
+    // It's worth testing this to see if it's possible to take advantage of LLVM optimizations
+    // here.
     pub fn add(&mut self, value: T) -> usize {
         match self.first {
             // If there is an empty spot in the pool, use that.
@@ -139,4 +144,690 @@ impl<'a, T> Iterator for PoolIterator<'a, T> {
 
         return None;
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        Pool,
+        PoolChunk::{End, NextIndex, Value},
+    };
+
+    struct TestStruct(String);
+
+    #[test]
+    fn initial_state() {
+        let p = Pool::<TestStruct>::new();
+
+        assert_eq!(p.data.len(), 0);
+        assert!(p.first.is_none());
+    }
+
+    #[test]
+    fn add_one() {
+        let mut p = Pool::<TestStruct>::new();
+        let ts = TestStruct("hello".to_string());
+
+        p.add(ts);
+
+        assert_eq!(p.data.len(), 1);
+        assert!(p.first.is_none());
+
+        match p[0] {
+            Value(ref v) => assert_eq!(v.0, "hello".to_string()),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn add_one_outlive_initialization() {
+        let mut p = Pool::<TestStruct>::new();
+
+        {
+            let ts = TestStruct("hello".to_string());
+            p.add(ts);
+        }
+
+        match p[0] {
+            Value(ref v) => assert_eq!(v.0, "hello".to_string()),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn remove_one_from_one() {
+        let mut p = Pool::<TestStruct>::new();
+        let ts = TestStruct("hello".to_string());
+
+        p.add(ts);
+        p.remove(0);
+
+        assert_eq!(p.data.len(), 1);
+
+        match p.first {
+            Some(v) => assert_eq!(v, 0),
+            _ => assert!(false),
+        };
+
+        match p[0] {
+            End => (),
+            _ => assert!(false),
+        };
+    }
+
+    #[test]
+    fn add_five() {
+        let mut p = Pool::<TestStruct>::new();
+
+        let ts0 = TestStruct("0".to_string());
+        let ts1 = TestStruct("1".to_string());
+        let ts2 = TestStruct("2".to_string());
+        let ts3 = TestStruct("3".to_string());
+        let ts4 = TestStruct("4".to_string());
+
+        p.add(ts0);
+        p.add(ts1);
+        p.add(ts2);
+        p.add(ts3);
+        p.add(ts4);
+
+        assert_eq!(p.data.len(), 5);
+        assert!(p.first.is_none());
+
+        match p[0] {
+            Value(ref v) => assert_eq!(v.0, "0".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[1] {
+            Value(ref v) => assert_eq!(v.0, "1".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[2] {
+            Value(ref v) => assert_eq!(v.0, "2".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[3] {
+            Value(ref v) => assert_eq!(v.0, "3".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[4] {
+            Value(ref v) => assert_eq!(v.0, "4".to_string()),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn remove_one_from_five() {
+        let mut p = Pool::<TestStruct>::new();
+
+        let ts0 = TestStruct("0".to_string());
+        let ts1 = TestStruct("1".to_string());
+        let ts2 = TestStruct("2".to_string());
+        let ts3 = TestStruct("3".to_string());
+        let ts4 = TestStruct("4".to_string());
+
+        p.add(ts0);
+        p.add(ts1);
+        p.add(ts2);
+        p.add(ts3);
+        p.add(ts4);
+
+        p.remove(2);
+
+        assert_eq!(p.data.len(), 5);
+
+        match p.first {
+            Some(v) => assert_eq!(v, 2),
+            _ => assert!(false),
+        };
+
+        match p[0] {
+            Value(ref v) => assert_eq!(v.0, "0".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[1] {
+            Value(ref v) => assert_eq!(v.0, "1".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[2] {
+            End => (),
+            _ => assert!(false),
+        };
+
+        match p[3] {
+            Value(ref v) => assert_eq!(v.0, "3".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[4] {
+            Value(ref v) => assert_eq!(v.0, "4".to_string()),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn remove_two_from_five() {
+        let mut p = Pool::<TestStruct>::new();
+
+        let ts0 = TestStruct("0".to_string());
+        let ts1 = TestStruct("1".to_string());
+        let ts2 = TestStruct("2".to_string());
+        let ts3 = TestStruct("3".to_string());
+        let ts4 = TestStruct("4".to_string());
+
+        p.add(ts0);
+        p.add(ts1);
+        p.add(ts2);
+        p.add(ts3);
+        p.add(ts4);
+
+        p.remove(2);
+        p.remove(4);
+
+        assert_eq!(p.data.len(), 5);
+
+        match p.first {
+            Some(v) => assert_eq!(v, 4),
+            _ => assert!(false),
+        };
+
+        match p[0] {
+            Value(ref v) => assert_eq!(v.0, "0".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[1] {
+            Value(ref v) => assert_eq!(v.0, "1".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[2] {
+            End => (),
+            _ => assert!(false),
+        };
+
+        match p[3] {
+            Value(ref v) => assert_eq!(v.0, "3".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[4] {
+            NextIndex(i) => assert_eq!(i, 2),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn remove_two_from_five_reverse() {
+        let mut p = Pool::<TestStruct>::new();
+
+        let ts0 = TestStruct("0".to_string());
+        let ts1 = TestStruct("1".to_string());
+        let ts2 = TestStruct("2".to_string());
+        let ts3 = TestStruct("3".to_string());
+        let ts4 = TestStruct("4".to_string());
+
+        p.add(ts0);
+        p.add(ts1);
+        p.add(ts2);
+        p.add(ts3);
+        p.add(ts4);
+
+        p.remove(4);
+        p.remove(2);
+
+        assert_eq!(p.data.len(), 5);
+
+        match p.first {
+            Some(v) => assert_eq!(v, 2),
+            _ => assert!(false),
+        };
+
+        match p[0] {
+            Value(ref v) => assert_eq!(v.0, "0".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[1] {
+            Value(ref v) => assert_eq!(v.0, "1".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[2] {
+            NextIndex(i) => assert_eq!(i, 4),
+            _ => assert!(false),
+        };
+
+        match p[3] {
+            Value(ref v) => assert_eq!(v.0, "3".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[4] {
+            End => (),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn remove_all_from_five() {
+        let mut p = Pool::<TestStruct>::new();
+
+        let ts0 = TestStruct("0".to_string());
+        let ts1 = TestStruct("1".to_string());
+        let ts2 = TestStruct("2".to_string());
+        let ts3 = TestStruct("3".to_string());
+        let ts4 = TestStruct("4".to_string());
+
+        p.add(ts0);
+        p.add(ts1);
+        p.add(ts2);
+        p.add(ts3);
+        p.add(ts4);
+
+        p.remove(0);
+        p.remove(1);
+        p.remove(2);
+        p.remove(3);
+        p.remove(4);
+
+        assert_eq!(p.data.len(), 5);
+
+        match p.first {
+            Some(v) => assert_eq!(v, 4),
+            _ => assert!(false),
+        };
+
+        match p[0] {
+            End => (),
+            _ => assert!(false),
+        }
+
+        match p[1] {
+            NextIndex(i) => assert_eq!(i, 0),
+            _ => assert!(false),
+        }
+
+        match p[2] {
+            NextIndex(i) => assert_eq!(i, 1),
+            _ => assert!(false),
+        };
+
+        match p[3] {
+            NextIndex(i) => assert_eq!(i, 2),
+            _ => assert!(false),
+        }
+
+        match p[4] {
+            NextIndex(i) => assert_eq!(i, 3),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn remove_all_from_five_reverse() {
+        let mut p = Pool::<TestStruct>::new();
+
+        let ts0 = TestStruct("0".to_string());
+        let ts1 = TestStruct("1".to_string());
+        let ts2 = TestStruct("2".to_string());
+        let ts3 = TestStruct("3".to_string());
+        let ts4 = TestStruct("4".to_string());
+
+        p.add(ts0);
+        p.add(ts1);
+        p.add(ts2);
+        p.add(ts3);
+        p.add(ts4);
+
+        p.remove(4);
+        p.remove(3);
+        p.remove(2);
+        p.remove(1);
+        p.remove(0);
+
+        assert_eq!(p.data.len(), 5);
+
+        match p.first {
+            Some(v) => assert_eq!(v, 0),
+            _ => assert!(false),
+        };
+
+        match p[0] {
+            NextIndex(i) => assert_eq!(i, 1),
+            _ => assert!(false),
+        }
+
+        match p[1] {
+            NextIndex(i) => assert_eq!(i, 2),
+            _ => assert!(false),
+        }
+
+        match p[2] {
+            NextIndex(i) => assert_eq!(i, 3),
+            _ => assert!(false),
+        };
+
+        match p[3] {
+            NextIndex(i) => assert_eq!(i, 4),
+            _ => assert!(false),
+        }
+
+        match p[4] {
+            End => (),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn replace_one_from_one() {
+        let mut p = Pool::<TestStruct>::new();
+
+        let ts = TestStruct("hello".to_string());
+        let ts_replace = TestStruct("there".to_string());
+
+        p.add(ts);
+        p.remove(0);
+        p.add(ts_replace);
+
+        assert_eq!(p.data.len(), 1);
+        assert!(p.first.is_none());
+
+        match p[0] {
+            Value(ref v) => assert_eq!(v.0, "there".to_string()),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn replace_one_from_five() {
+        let mut p = Pool::<TestStruct>::new();
+
+        let ts0 = TestStruct("0".to_string());
+        let ts1 = TestStruct("1".to_string());
+        let ts2 = TestStruct("2".to_string());
+        let ts3 = TestStruct("3".to_string());
+        let ts4 = TestStruct("4".to_string());
+
+        let ts2_replace = TestStruct("22".to_string());
+
+        p.add(ts0);
+        p.add(ts1);
+        p.add(ts2);
+        p.add(ts3);
+        p.add(ts4);
+
+        p.remove(2);
+        p.add(ts2_replace);
+
+        assert_eq!(p.data.len(), 5);
+        assert!(p.first.is_none());
+
+        match p[0] {
+            Value(ref v) => assert_eq!(v.0, "0".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[1] {
+            Value(ref v) => assert_eq!(v.0, "1".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[2] {
+            Value(ref v) => assert_eq!(v.0, "22".to_string()),
+            _ => assert!(false),
+        };
+
+        match p[3] {
+            Value(ref v) => assert_eq!(v.0, "3".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[4] {
+            Value(ref v) => assert_eq!(v.0, "4".to_string()),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn replace_two_from_five() {
+        let mut p = Pool::<TestStruct>::new();
+
+        let ts0 = TestStruct("0".to_string());
+        let ts1 = TestStruct("1".to_string());
+        let ts2 = TestStruct("2".to_string());
+        let ts3 = TestStruct("3".to_string());
+        let ts4 = TestStruct("4".to_string());
+
+        let ts2_replace = TestStruct("22".to_string());
+        let ts4_replace = TestStruct("44".to_string());
+
+        p.add(ts0);
+        p.add(ts1);
+        p.add(ts2);
+        p.add(ts3);
+        p.add(ts4);
+
+        p.remove(2);
+        p.remove(4);
+
+        p.add(ts4_replace);
+        p.add(ts2_replace);
+
+        assert_eq!(p.data.len(), 5);
+        assert!(p.first.is_none());
+
+        match p[0] {
+            Value(ref v) => assert_eq!(v.0, "0".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[1] {
+            Value(ref v) => assert_eq!(v.0, "1".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[2] {
+            Value(ref v) => assert_eq!(v.0, "22".to_string()),
+            _ => assert!(false),
+        };
+
+        match p[3] {
+            Value(ref v) => assert_eq!(v.0, "3".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[4] {
+            Value(ref v) => assert_eq!(v.0, "44".to_string()),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn replace_two_from_five_reverse() {
+        let mut p = Pool::<TestStruct>::new();
+
+        let ts0 = TestStruct("0".to_string());
+        let ts1 = TestStruct("1".to_string());
+        let ts2 = TestStruct("2".to_string());
+        let ts3 = TestStruct("3".to_string());
+        let ts4 = TestStruct("4".to_string());
+
+        let ts2_replace = TestStruct("22".to_string());
+        let ts4_replace = TestStruct("44".to_string());
+
+        p.add(ts0);
+        p.add(ts1);
+        p.add(ts2);
+        p.add(ts3);
+        p.add(ts4);
+
+        p.remove(4);
+        p.remove(2);
+
+        p.add(ts2_replace);
+        p.add(ts4_replace);
+
+        assert_eq!(p.data.len(), 5);
+        assert!(p.first.is_none());
+
+        match p[0] {
+            Value(ref v) => assert_eq!(v.0, "0".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[1] {
+            Value(ref v) => assert_eq!(v.0, "1".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[2] {
+            Value(ref v) => assert_eq!(v.0, "22".to_string()),
+            _ => assert!(false),
+        };
+
+        match p[3] {
+            Value(ref v) => assert_eq!(v.0, "3".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[4] {
+            Value(ref v) => assert_eq!(v.0, "44".to_string()),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn replace_all_from_five() {
+        let mut p = Pool::<TestStruct>::new();
+
+        let ts0 = TestStruct("0".to_string());
+        let ts1 = TestStruct("1".to_string());
+        let ts2 = TestStruct("2".to_string());
+        let ts3 = TestStruct("3".to_string());
+        let ts4 = TestStruct("4".to_string());
+
+        let ts0_replace = TestStruct("00".to_string());
+        let ts1_replace = TestStruct("11".to_string());
+        let ts2_replace = TestStruct("22".to_string());
+        let ts3_replace = TestStruct("33".to_string());
+        let ts4_replace = TestStruct("44".to_string());
+
+        p.add(ts0);
+        p.add(ts1);
+        p.add(ts2);
+        p.add(ts3);
+        p.add(ts4);
+
+        p.remove(0);
+        p.remove(1);
+        p.remove(2);
+        p.remove(3);
+        p.remove(4);
+
+        p.add(ts4_replace);
+        p.add(ts3_replace);
+        p.add(ts2_replace);
+        p.add(ts1_replace);
+        p.add(ts0_replace);
+
+        assert_eq!(p.data.len(), 5);
+        assert!(p.first.is_none());
+
+        match p[0] {
+            Value(ref v) => assert_eq!(v.0, "00".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[1] {
+            Value(ref v) => assert_eq!(v.0, "11".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[2] {
+            Value(ref v) => assert_eq!(v.0, "22".to_string()),
+            _ => assert!(false),
+        };
+
+        match p[3] {
+            Value(ref v) => assert_eq!(v.0, "33".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[4] {
+            Value(ref v) => assert_eq!(v.0, "44".to_string()),
+            _ => assert!(false),
+        }
+    }
+
+    #[test]
+    fn replace_all_from_five_reverse() {
+        let mut p = Pool::<TestStruct>::new();
+
+        let ts0 = TestStruct("0".to_string());
+        let ts1 = TestStruct("1".to_string());
+        let ts2 = TestStruct("2".to_string());
+        let ts3 = TestStruct("3".to_string());
+        let ts4 = TestStruct("4".to_string());
+
+        let ts0_replace = TestStruct("00".to_string());
+        let ts1_replace = TestStruct("11".to_string());
+        let ts2_replace = TestStruct("22".to_string());
+        let ts3_replace = TestStruct("33".to_string());
+        let ts4_replace = TestStruct("44".to_string());
+
+        p.add(ts0);
+        p.add(ts1);
+        p.add(ts2);
+        p.add(ts3);
+        p.add(ts4);
+
+        p.remove(4);
+        p.remove(3);
+        p.remove(2);
+        p.remove(1);
+        p.remove(0);
+
+        p.add(ts0_replace);
+        p.add(ts1_replace);
+        p.add(ts2_replace);
+        p.add(ts3_replace);
+        p.add(ts4_replace);
+
+        assert_eq!(p.data.len(), 5);
+        assert!(p.first.is_none());
+
+        match p[0] {
+            Value(ref v) => assert_eq!(v.0, "00".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[1] {
+            Value(ref v) => assert_eq!(v.0, "11".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[2] {
+            Value(ref v) => assert_eq!(v.0, "22".to_string()),
+            _ => assert!(false),
+        };
+
+        match p[3] {
+            Value(ref v) => assert_eq!(v.0, "33".to_string()),
+            _ => assert!(false),
+        }
+
+        match p[4] {
+            Value(ref v) => assert_eq!(v.0, "44".to_string()),
+            _ => assert!(false),
+        }
+    }
+
+    // TODO: iterator tests
 }
