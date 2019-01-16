@@ -15,8 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::vec::Vec;
-
+use pool::Pool;
 use vector3::Vector3;
 
 type Vector = Vector3<f64>;
@@ -201,12 +200,12 @@ struct Polyhedron {
     /// The index of the root edge of the polyhedron.
     root_edge: Option<usize>,
 
-    /// The edges of the polyhedron. TODO: Consider using a memory arena/pool.
-    edges: Vec<HalfEdge>,
-    /// The vertices around the polyhedron. TODO: Consider using a memory arena/pool.
-    vertices: Vec<Vector>,
-    /// The faces of the polyhedron. TODO: Consider using a memory arena/pool.
-    faces: Vec<Face>,
+    /// The edges of the polyhedron.
+    edges: Pool<HalfEdge>,
+    /// The vertices around the polyhedron.
+    vertices: Pool<Vector>,
+    /// The faces of the polyhedron.
+    faces: Pool<Face>,
 
     /// The face data.
     face_data: Vec<FaceData>,
@@ -236,21 +235,21 @@ impl Polyhedron {
     ) {
         // TODO: Perhaps add some optional verification.
 
-        let mut vertices = Vec::<Vector>::with_capacity(8);
-        let mut faces = Vec::<Face>::with_capacity(6);
-        let mut edges = Vec::<HalfEdge>::with_capacity(24);
+        let mut vertices = Pool::<Vector>::with_capacity(8);
+        let mut faces = Pool::<Face>::with_capacity(6);
+        let mut edges = Pool::<HalfEdge>::with_capacity(24);
 
         let v = |x, y, z| Vector { x, y, z };
 
-        // Add each vertex in order, so that the index matches the one assigned in StartingFaces.
-        vertices.push(v(x_min, y_min, z_min));
-        vertices.push(v(x_max, y_min, z_min));
-        vertices.push(v(x_max, y_min, z_max));
-        vertices.push(v(x_min, y_min, z_max));
-        vertices.push(v(x_min, y_max, z_min));
-        vertices.push(v(x_max, y_max, z_min));
-        vertices.push(v(x_max, y_max, z_max));
-        vertices.push(v(x_min, y_max, z_max));
+        // Add each vertex in order, so that the index matches the one assigned in StartingVertices.
+        vertices.add(v(x_min, y_min, z_min));
+        vertices.add(v(x_max, y_min, z_min));
+        vertices.add(v(x_max, y_min, z_max));
+        vertices.add(v(x_min, y_min, z_max));
+        vertices.add(v(x_min, y_max, z_min));
+        vertices.add(v(x_max, y_max, z_min));
+        vertices.add(v(x_max, y_max, z_max));
+        vertices.add(v(x_min, y_max, z_max));
 
         self.vertices = vertices;
         self.faces = faces;
