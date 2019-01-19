@@ -16,6 +16,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use pool::Pool;
+use self::{StartingEdges::*, StartingFaces::*, StartingVertices::*};
+use std::slice::Iter;
 use vector3::Vector3;
 
 type Vector = Vector3<f64>;
@@ -41,7 +43,7 @@ struct HalfEdge {
 #[derive(Debug, Default)]
 struct Face {
     /// The index of the point that the face contains.
-    point_index: usize,
+    point_index: Option<usize>,
 
     /// The index of the first half-edge in the face.
     starting_edge_index: usize,
@@ -65,7 +67,7 @@ struct FaceData {
 //   Left          : L
 //   Up (Top)      : U
 //   Down (Bottom) : D
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum StartingFaces {
     F = 0,
     R = 1,
@@ -88,7 +90,7 @@ enum StartingFaces {
 //  |/        |/               /  |
 // FDL-------FDR             -y   |
 //                                -z
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum StartingVertices {
     FDL = 0,
     FDR = 1,
@@ -100,7 +102,7 @@ enum StartingVertices {
     BUL = 7,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum StartingEdges {
     // Front Face
     //            FU
@@ -233,23 +235,70 @@ impl Polyhedron {
         y_max: f64,
         z_max: f64,
     ) {
-        // TODO: Perhaps add some optional verification.
-
         let mut vertices = Pool::<Vector>::with_capacity(8);
         let mut faces = Pool::<Face>::with_capacity(6);
         let mut edges = Pool::<HalfEdge>::with_capacity(24);
 
-        let v = |x, y, z| Vector { x, y, z };
+        let make_vertex = |x, y, z| Vector { x, y, z };
 
         // Add each vertex in order, so that the index matches the one assigned in StartingVertices.
-        vertices.add(v(x_min, y_min, z_min));
-        vertices.add(v(x_max, y_min, z_min));
-        vertices.add(v(x_max, y_min, z_max));
-        vertices.add(v(x_min, y_min, z_max));
-        vertices.add(v(x_min, y_max, z_min));
-        vertices.add(v(x_max, y_max, z_min));
-        vertices.add(v(x_max, y_max, z_max));
-        vertices.add(v(x_min, y_max, z_max));
+        let fdl = vertices.add(make_vertex(x_min, y_min, z_min));
+        let fdr = vertices.add(make_vertex(x_max, y_min, z_min));
+        let fur = vertices.add(make_vertex(x_max, y_min, z_max));
+        let ful = vertices.add(make_vertex(x_min, y_min, z_max));
+        let bdl = vertices.add(make_vertex(x_min, y_max, z_min));
+        let bdr = vertices.add(make_vertex(x_max, y_max, z_min));
+        let bur = vertices.add(make_vertex(x_max, y_max, z_max));
+        let bul = vertices.add(make_vertex(x_min, y_max, z_max));
+
+        debug_assert_eq!(fdl, FDL as usize);
+        debug_assert_eq!(fdr, FDR as usize);
+        debug_assert_eq!(fur, FUR as usize);
+        debug_assert_eq!(ful, FUL as usize);
+        debug_assert_eq!(bdl, BDL as usize);
+        debug_assert_eq!(bdr, BDR as usize);
+        debug_assert_eq!(bur, BUR as usize);
+        debug_assert_eq!(bul, BUL as usize);
+
+        let make_face = |starting_edge_index| Face {
+            point_index: Option::None,
+            starting_edge_index: starting_edge_index as usize,
+        };
+
+        let make_edge = |face, flip, target, next| HalfEdge {
+            flip: Option::Some(flip as usize),
+            next: Option::Some(next as usize),
+            target: Option::Some(target as usize),
+            face: Option::Some(face as usize),
+        };
+
+        // Add each face in order, so that the index matches the one assigned in StartingFaces.
+        let f = faces.add(make_face(FU));
+        let fu = edges.add(make_edge(F, UR, FUR, RF));
+        // TODO add more edges here.
+
+        debug_assert_eq!(f, F as usize);
+        debug_assert_eq!(fu, FU as usize);
+
+        let r = faces.add(make_face(RU));
+
+        debug_assert_eq!(r, R as usize);
+
+        let b = faces.add(make_face(BU));
+
+        debug_assert_eq!(b, B as usize);
+
+        let l = faces.add(make_face(LU));
+
+        debug_assert_eq!(l, L as usize);
+
+        let u = faces.add(make_face(UF));
+
+        debug_assert_eq!(u, U as usize);
+
+        let d = faces.add(make_face(DF));
+
+        debug_assert_eq!(d, D as usize);
 
         self.vertices = vertices;
         self.faces = faces;
