@@ -1,4 +1,3 @@
-// polyhedron.rs --- Implementation of the Polyhedron class, which performs the actual Voronoi
 // calculations.
 // Copyright (C) 2018-2019 Maxfield Comstock
 
@@ -15,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use pool::Pool;
 use self::{StartingEdges::*, StartingFaces::*, StartingVertices::*};
+use pool::Pool;
 use std::slice::Iter;
 use vector3::Vector3;
 
@@ -274,44 +273,99 @@ impl Polyhedron {
 
         // Add each face in order, so that the index matches the one assigned in StartingFaces.
         let f = faces.add(make_face(FU));
-        let fu = edges.add(make_edge(F, UR, FUR, RF));
-        // TODO add more edges here.
+        let fu = edges.add(make_edge(F, UF, FUL, FL));
+        let fl = edges.add(make_edge(F, LF, FDL, FD));
+        let fd = edges.add(make_edge(F, DF, FDR, FR));
+        let fr = edges.add(make_edge(F, RF, FUR, FU));
 
         debug_assert_eq!(f, F as usize);
         debug_assert_eq!(fu, FU as usize);
+        debug_assert_eq!(fl, FL as usize);
+        debug_assert_eq!(fd, FD as usize);
+        debug_assert_eq!(fr, FR as usize);
 
         let r = faces.add(make_face(RU));
+        let ru = edges.add(make_edge(R, UR, FUR, RF));
+        let rf = edges.add(make_edge(R, FR, FDR, RD));
+        let rd = edges.add(make_edge(R, DR, BDR, RB));
+        let rb = edges.add(make_edge(R, BR, BUR, RU));
 
         debug_assert_eq!(r, R as usize);
+        debug_assert_eq!(ru, RU as usize);
+        debug_assert_eq!(rf, RF as usize);
+        debug_assert_eq!(rd, RD as usize);
+        debug_assert_eq!(rb, RB as usize);
 
         let b = faces.add(make_face(BU));
+        let bu = edges.add(make_edge(B, UB, BUR, BR));
+        let br = edges.add(make_edge(B, RB, BDR, BD));
+        let bd = edges.add(make_edge(B, DB, BDL, BL));
+        let bl = edges.add(make_edge(B, LB, BUL, BU));
 
         debug_assert_eq!(b, B as usize);
+        debug_assert_eq!(bu, BU as usize);
+        debug_assert_eq!(br, BR as usize);
+        debug_assert_eq!(bd, BD as usize);
+        debug_assert_eq!(bl, BL as usize);
 
         let l = faces.add(make_face(LU));
+        let lu = edges.add(make_edge(L, UL, BUL, LB));
+        let lb = edges.add(make_edge(L, BL, BDL, LD));
+        let ld = edges.add(make_edge(L, DL, FDL, LF));
+        let lf = edges.add(make_edge(L, FL, FUL, LU));
 
         debug_assert_eq!(l, L as usize);
+        debug_assert_eq!(lu, LU as usize);
+        debug_assert_eq!(lb, LB as usize);
+        debug_assert_eq!(ld, LD as usize);
+        debug_assert_eq!(lf, LF as usize);
 
         let u = faces.add(make_face(UF));
+        let uf = edges.add(make_edge(U, FU, FUR, UR));
+        let ur = edges.add(make_edge(U, RU, BUR, UB));
+        let ub = edges.add(make_edge(U, BU, BUL, UL));
+        let ul = edges.add(make_edge(U, LU, FUL, UF));
 
         debug_assert_eq!(u, U as usize);
+        debug_assert_eq!(uf, UF as usize);
+        debug_assert_eq!(ur, UR as usize);
+        debug_assert_eq!(ub, UB as usize);
+        debug_assert_eq!(ul, UL as usize);
 
         let d = faces.add(make_face(DF));
+        let df = edges.add(make_edge(D, FD, FDL, DL));
+        let dl = edges.add(make_edge(D, LD, BDL, DB));
+        let db = edges.add(make_edge(D, BD, BDR, DR));
+        let dr = edges.add(make_edge(B, RD, FDR, DF));
 
         debug_assert_eq!(d, D as usize);
+        debug_assert_eq!(df, DF as usize);
+        debug_assert_eq!(dl, DL as usize);
+        debug_assert_eq!(db, DB as usize);
+        debug_assert_eq!(dr, DR as usize);
 
         self.vertices = vertices;
         self.faces = faces;
         self.edges = edges;
+
+        // Pick an arbitrary edge to serve as the starting point.
+        self.root_edge = Some(FU as usize);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::HalfEdge;
+    use super::{HalfEdge, Polyhedron};
 
     #[test]
     fn create_half_edge() {
         let _half_edge = HalfEdge::default();
+    }
+
+    #[test]
+    fn build_cube() {
+        let mut p = Polyhedron::default();
+
+        p.build_cube(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
     }
 }
