@@ -224,16 +224,36 @@ struct Polyhedron {
 }
 
 impl Polyhedron {
-    /// Construct the initial polyhedron as a cube.
-    fn build_cube(
-        &mut self,
+    /// Get a new polyhedron initialized as a cube.
+    pub fn new(
         x_min: f64,
         y_min: f64,
         z_min: f64,
         x_max: f64,
         y_max: f64,
         z_max: f64,
-    ) {
+    ) -> Polyhedron {
+        let (root_edge, vertices, faces, edges) =
+            Polyhedron::build_cube(x_min, y_min, z_min, x_max, y_max, z_max);
+
+        Polyhedron {
+            root_edge,
+            vertices,
+            faces,
+            edges,
+            ..Default::default()
+        }
+    }
+
+    /// Construct the initial polyhedron as a cube.
+    fn build_cube(
+        x_min: f64,
+        y_min: f64,
+        z_min: f64,
+        x_max: f64,
+        y_max: f64,
+        z_max: f64,
+    ) -> (Option<usize>, Pool<Vector>, Pool<Face>, Pool<HalfEdge>) {
         let mut vertices = Pool::<Vector>::with_capacity(8);
         let mut faces = Pool::<Face>::with_capacity(6);
         let mut edges = Pool::<HalfEdge>::with_capacity(24);
@@ -344,12 +364,7 @@ impl Polyhedron {
         debug_assert_eq!(db, DB as usize);
         debug_assert_eq!(dr, DR as usize);
 
-        self.vertices = vertices;
-        self.faces = faces;
-        self.edges = edges;
-
-        // Pick an arbitrary edge to serve as the starting point.
-        self.root_edge = Some(FU as usize);
+        (Some(FU as usize), vertices, faces, edges)
     }
 }
 
@@ -364,8 +379,11 @@ mod tests {
 
     #[test]
     fn build_cube() {
-        let mut p = Polyhedron::default();
+        Polyhedron::build_cube(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
+    }
 
-        p.build_cube(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
+    #[test]
+    fn new() {
+        let p = Polyhedron::new(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
     }
 }
