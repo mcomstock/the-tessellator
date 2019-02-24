@@ -15,9 +15,9 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use self::{StartingEdges::*, StartingFaces::*, StartingVertices::*};
-use pool::Pool;
+use crate::pool::Pool;
 use std::slice::Iter;
-use vector3::Vector3;
+use crate::vector3::Vector3;
 
 type Vector = Vector3<f64>;
 
