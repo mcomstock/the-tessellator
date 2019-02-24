@@ -15,12 +15,89 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::ops::{Add, Mul, Neg, Sub};
+
+/// Allow a Vector3 to contain any reasonable float type.
+pub trait Vector3Float:
+    Default
+    + Copy
+    + PartialOrd
+    + Add<Output = Self>
+    + Mul<Output = Self>
+    + Neg<Output = Self>
+    + Sub<Output = Self>
+{
+}
+
+impl<T> Vector3Float for T where
+    T: Default
+        + Copy
+        + PartialOrd
+        + Add<Output = Self>
+        + Mul<Output = Self>
+        + Neg<Output = Self>
+        + Sub<Output = Self>
+{
+}
+
 /// A three-dimensional vector that implements a number of mathematical operations.
-#[derive(Debug, Default)]
-pub struct Vector3<Real: Default> {
+#[derive(Clone, Debug, Default)]
+pub struct Vector3<Real: Vector3Float> {
     pub x: Real,
     pub y: Real,
     pub z: Real,
+}
+
+impl<Real: Vector3Float> Vector3<Real> {
+    /// Get the dot product of two vectors.
+    // TODO constexpr
+    fn dot(a: Vector3<Real>, b: Vector3<Real>) -> Real {
+        a.x * b.x + a.y * b.y + a.z * b.z
+    }
+}
+
+/// The location of a plane relative to a polyhedron.
+#[derive(Debug)]
+pub enum PlaneLocation {
+    Outside,
+    Incident,
+    Inside,
+}
+
+/// A two-dimensional plane defined by an offset and a normal vector.
+#[derive(Debug, Default)]
+pub struct Plane<Real: Vector3Float> {
+    pub unit_normal: Vector3<Real>,
+    pub plane_offset: Real,
+}
+
+impl<Real: Vector3Float> Plane<Real> {
+    // TODO: This can be constexpr.
+    fn compute_location(signed_distance: Real, tolerance: Real) -> PlaneLocation {
+        if signed_distance > tolerance {
+            PlaneLocation::Outside
+        } else if signed_distance < -tolerance {
+            PlaneLocation::Inside
+        } else {
+            PlaneLocation::Incident
+        }
+    }
+
+    // TODO constexpr
+    fn location(&self, vector: Vector3<Real>, tolerance: Real) -> PlaneLocation {
+        Self::compute_location(self.signed_distance(vector), tolerance)
+    }
+
+    // TODO constexpr
+    fn signed_distance(&self, vector: Vector3<Real>) -> Real {
+        self.offset(vector) - self.plane_offset
+    }
+
+    // TODO constexpr
+    fn offset(&self, vector: Vector3<Real>) -> Real {
+        // TODO: Is there a way to do this without the clone?
+        Vector3::dot(self.unit_normal.clone(), vector)
+    }
 }
 
 #[cfg(test)]

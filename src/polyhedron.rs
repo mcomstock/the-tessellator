@@ -16,10 +16,10 @@
 
 use self::{StartingEdges::*, StartingFaces::*, StartingVertices::*};
 use crate::pool::Pool;
-use std::slice::Iter;
-use crate::vector3::Vector3;
+use crate::vector3::{Plane, Vector3};
 
 type Vector = Vector3<f64>;
+type Plane64 = Plane<f64>;
 
 /// A half-edge structure. Two half-edges make up an edge in the polyhedron, each pointing to one
 /// of the two vertices that make up that edge.
@@ -365,6 +365,11 @@ impl Polyhedron {
         debug_assert_eq!(dr, DR as usize);
 
         (Some(FU as usize), vertices, faces, edges)
+    }
+
+    // TODO implement
+    fn find_outgoing_edge(self, plane: Plane64) -> Option<usize> {
+        None
     }
 }
 
