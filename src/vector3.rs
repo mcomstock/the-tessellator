@@ -41,7 +41,7 @@ impl<T> Vector3Float for T where
 }
 
 /// A three-dimensional vector that implements a number of mathematical operations.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct Vector3<Real: Vector3Float> {
     pub x: Real,
     pub y: Real,
@@ -51,7 +51,7 @@ pub struct Vector3<Real: Vector3Float> {
 impl<Real: Vector3Float> Vector3<Real> {
     /// Get the dot product of two vectors.
     // TODO constexpr
-    fn dot(a: Vector3<Real>, b: Vector3<Real>) -> Real {
+    fn dot(a: &Vector3<Real>, b: &Vector3<Real>) -> Real {
         a.x * b.x + a.y * b.y + a.z * b.z
     }
 }
@@ -95,8 +95,7 @@ impl<Real: Vector3Float> Plane<Real> {
 
     // TODO constexpr
     fn offset(&self, vector: Vector3<Real>) -> Real {
-        // TODO: Is there a way to do this without the clone?
-        Vector3::dot(self.unit_normal.clone(), vector)
+        Vector3::dot(&self.unit_normal, &vector)
     }
 }
 
