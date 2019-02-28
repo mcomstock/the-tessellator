@@ -1,3 +1,4 @@
+// polyhedron.rs --- Implementation of the polyhedron class, which performs the actual Voronoi
 // calculations.
 // Copyright (C) 2018-2019 Maxfield Comstock
 
@@ -15,11 +16,13 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use self::{StartingEdges::*, StartingFaces::*, StartingVertices::*};
-use crate::pool::Pool;
-use crate::vector3::{Plane, Vector3};
+use crate::pool::{Pool, PoolChunk};
+use crate::vector3::{Plane, PlaneLocation, Vector3};
 
 type Vector = Vector3<f64>;
 type Plane64 = Plane<f64>;
+
+const TOLERANCE: f64 = 1e-12;
 
 /// A half-edge structure. Two half-edges make up an edge in the polyhedron, each pointing to one
 /// of the two vertices that make up that edge.
@@ -367,8 +370,78 @@ impl Polyhedron {
         (Some(FU as usize), vertices, faces, edges)
     }
 
-    // TODO implement
+    /// Find the index of an edge that is going out of the plane. The edge does not need to begin
+    /// inside the plane to satisfy this condition.
     fn find_outgoing_edge(self, plane: Plane64) -> Option<usize> {
+        // Check for any vertices that would be cut off by the plane - these are "outside" vertices.
+        // If no such vertices are present, then there is no need to cut at all.
+        let mut need_to_cut = false;
+        for vertex in self.vertices.into_iter() {
+            if plane.vector_location(vertex, TOLERANCE) == PlaneLocation::Outside {
+                need_to_cut = true;
+                break;
+            }
+        }
+
+        // If no outside edges were found, simply return nothing.
+        if !need_to_cut {
+            return None;
+        }
+
+        // Search the edges until an outgoing one is found.
+        for edge in self.edges.into_iter() {
+            // TODO look for better ways to handle the monads
+            let target_index = match edge.target {
+                Some(u) => u,
+                // TODO this may be an error case, requiring a debug assertion
+                _ => continue,
+            };
+
+            let target = match &self.vertices[target_index] {
+                PoolChunk::Value(v) => v,
+                // TODO this may be an error case, requiring a debug assertion
+                _ => continue,
+            };
+
+            // If the edge is ingoing, check its flip.
+            // TODO check if this is actually faster
+            match plane.vector_location(&target, TOLERANCE) {
+                PlaneLocation::Inside => {
+                    // TODO it's even worse here
+                    let flip_target_index = match edge.flip {
+                        Some(f) => match &self.edges[f] {
+                            PoolChunk::Value(e) => match e.target {
+                                Some(u) => u,
+                                // TODO this may be an error case, requiring a debug assertion
+                                _ => continue,
+                            },
+                            // TODO this may be an error case, requiring a debug assertion
+                            _ => continue,
+                        },
+                        // TODO this may be an error case, requiring a debug assertion
+                        _ => continue,
+                    };
+
+                    let flip_target = match &self.vertices[flip_target_index] {
+                        PoolChunk::Value(v) => v,
+                        // TODO this may be an error case, requiring a debug assertion
+                        _ => continue,
+                    };
+
+                    if plane.vector_location(flip_target, TOLERANCE) == PlaneLocation::Outside {
+                        return Some(flip_target_index);
+                    }
+                }
+
+                // TODO the C++ version doesn't check this case - why?
+                PlaneLocation::Outside => {
+                    return Some(target_index);
+                }
+
+                _ => continue,
+            }
+        }
+
         None
     }
 }
