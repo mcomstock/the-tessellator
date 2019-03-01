@@ -119,6 +119,30 @@ impl<T> Pool<T> {
         self.first = Option::Some(index);
         self.data[index] = chunk;
     }
+
+    /// Get an option that may contain an element, if one exists at the given index.
+    pub fn get(&self, index: usize) -> Option<&T> {
+        match &self.data[index] {
+            PoolChunk::Value(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Get an element, or fail if it is not found.
+    pub fn get_or_fail(&self, index: usize) -> &T {
+        match &self.data[index] {
+            PoolChunk::Value(v) => v,
+            _ => panic!(),
+        }
+    }
+
+    /// Get the next index where an element would be inserted.
+    pub fn next_index(&self) -> usize {
+        match self.first {
+            Some(i) => i,
+            _ => self.data.len() - 1,
+        }
+    }
 }
 
 /// An iterator for a pool, which skips over any empty values.

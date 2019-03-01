@@ -372,7 +372,7 @@ impl Polyhedron {
 
     /// Find the index of an edge that is going out of the plane. The edge does not need to begin
     /// inside the plane to satisfy this condition.
-    fn find_outgoing_edge(self, plane: Plane64) -> Option<usize> {
+    fn find_outgoing_edge(&self, plane: &Plane64) -> Option<usize> {
         // Check for any vertices that would be cut off by the plane - these are "outside" vertices.
         // If no such vertices are present, then there is no need to cut at all.
         let mut need_to_cut = false;
@@ -397,8 +397,8 @@ impl Polyhedron {
                 _ => continue,
             };
 
-            let target = match &self.vertices[target_index] {
-                PoolChunk::Value(v) => v,
+            let target = match self.vertices.get(target_index) {
+                Some(v) => v,
                 // TODO this may be an error case, requiring a debug assertion
                 _ => continue,
             };
@@ -409,8 +409,8 @@ impl Polyhedron {
                 PlaneLocation::Inside => {
                     // TODO it's even worse here
                     let flip_target_index = match edge.flip {
-                        Some(f) => match &self.edges[f] {
-                            PoolChunk::Value(e) => match e.target {
+                        Some(f) => match &self.edges.get(f) {
+                            Some(e) => match e.target {
                                 Some(u) => u,
                                 // TODO this may be an error case, requiring a debug assertion
                                 _ => continue,
@@ -422,8 +422,8 @@ impl Polyhedron {
                         _ => continue,
                     };
 
-                    let flip_target = match &self.vertices[flip_target_index] {
-                        PoolChunk::Value(v) => v,
+                    let flip_target = match self.vertices.get(flip_target_index) {
+                        Some(v) => v,
                         // TODO this may be an error case, requiring a debug assertion
                         _ => continue,
                     };
@@ -442,7 +442,53 @@ impl Polyhedron {
             }
         }
 
-        None
+        return None;
+    }
+
+    /// Cut the face of the polyhedron with the given plane.
+    fn cut_with_plane(&mut self, face_to_cut_index: usize, plane: &Plane64) -> bool {
+        // TODO check validity for debug?
+
+        let first_outgoing_edge_index = match self.find_outgoing_edge(plane) {
+            Some(index) => index,
+            // This is a legitimate case where there is no outgoing edge to cut.
+            _ => return false,
+        };
+
+        let first_outside_face_edge_index = self.edges.next_index();
+        let outside_face_index = self.faces.next_index();
+
+        let actual_edge_index = self.edges.add(
+            HalfEdge {
+                face: Some(outside_face_index),
+                ..Default::default()
+            }
+        );
+
+        let actual_face_index = self.faces.add(Face {
+            // TODO this doesn't seem right
+            point_index: Some(face_to_cut_index),
+            starting_edge_index: first_outside_face_edge_index,
+        });
+
+        debug_assert_eq!(first_outside_face_edge_index, actual_edge_index);
+        debug_assert_eq!(outside_face_index, actual_face_index);
+
+        // TODO check if it's fine to do this on-demand instead of batching
+        let vertices_to_destroy = Vec::<usize>::new();
+        let edges_to_destroy = Vec::<usize>::new();
+
+        let mut outside_face_edge_index = first_outside_face_edge_index;
+        let mut outgoing_edge_index = first_outgoing_edge_index;
+
+        loop {
+            // The test condition that should break out of the loop
+            if outgoing_edge_index == first_outgoing_edge_index {
+                break;
+            }
+        }
+
+        false
     }
 }
 
