@@ -57,7 +57,7 @@ impl<Real: Vector3Float> Vector3<Real> {
 }
 
 /// The location of a point relative to this plane.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PlaneLocation {
     /// The point lies in the direction of the unit normal vector relative to the plane.
     Outside,
