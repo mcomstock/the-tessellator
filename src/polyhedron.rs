@@ -16,7 +16,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use self::{StartingEdges::*, StartingFaces::*, StartingVertices::*};
-use crate::pool::{Pool, PoolChunk};
+use crate::pool::Pool;
 use crate::vector3::{Plane, PlaneLocation, Vector3};
 
 type Vector = Vector3<f64>;
@@ -407,18 +407,8 @@ impl Polyhedron {
             // TODO check if this is actually faster
             match plane.vector_location(&target, TOLERANCE) {
                 PlaneLocation::Inside => {
-                    // TODO it's even worse here
-                    let flip_target_index = match edge.flip {
-                        Some(f) => match &self.edges.get(f) {
-                            Some(e) => match e.target {
-                                Some(u) => u,
-                                // TODO this may be an error case, requiring a debug assertion
-                                _ => continue,
-                            },
-                            // TODO this may be an error case, requiring a debug assertion
-                            _ => continue,
-                        },
-                        // TODO this may be an error case, requiring a debug assertion
+                    let flip_target_index = match self.target_index(edge.flip) {
+                        Some(t) => t,
                         _ => continue,
                     };
 
@@ -450,7 +440,32 @@ impl Polyhedron {
         // TODO check validity for debug?
 
         let first_outgoing_edge_index = match self.find_outgoing_edge(plane) {
-            Some(index) => index,
+            Some(index) => {
+                // Check that the target vertex is not inside.
+                debug_assert_ne!(
+                    plane.vector_location(
+                        &self
+                            .vertices
+                            .get_or_fail(self.edges.get_or_fail(index).target.unwrap()),
+                        TOLERANCE
+                    ),
+                    PlaneLocation::Inside
+                );
+
+                // Check that the source vertex (target of the flip) is inside.
+                debug_assert_eq!(
+                    plane.vector_location(
+                        &self.vertices.get_or_fail(
+                            self.target_index(self.edges.get_or_fail(index).flip)
+                                .unwrap()
+                        ),
+                        TOLERANCE
+                    ),
+                    PlaneLocation::Inside
+                );
+
+                index
+            }
             // This is a legitimate case where there is no outgoing edge to cut.
             _ => return false,
         };
@@ -458,12 +473,10 @@ impl Polyhedron {
         let first_outside_face_edge_index = self.edges.next_index();
         let outside_face_index = self.faces.next_index();
 
-        let actual_edge_index = self.edges.add(
-            HalfEdge {
-                face: Some(outside_face_index),
-                ..Default::default()
-            }
-        );
+        let actual_edge_index = self.edges.add(HalfEdge {
+            face: Some(outside_face_index),
+            ..Default::default()
+        });
 
         let actual_face_index = self.faces.add(Face {
             // TODO this doesn't seem right
@@ -482,6 +495,17 @@ impl Polyhedron {
         let mut outgoing_edge_index = first_outgoing_edge_index;
 
         loop {
+            let previous_vertex_index = self.target_index_from_index(outgoing_edge_index);
+
+            // The target vertex should not be inside.
+            debug_assert_ne!(
+                plane.vector_location(
+                    self.vertices.get_or_fail(previous_vertex_index.unwrap()),
+                    TOLERANCE
+                ),
+                PlaneLocation::Inside
+            );
+
             // The test condition that should break out of the loop
             if outgoing_edge_index == first_outgoing_edge_index {
                 break;
@@ -489,6 +513,23 @@ impl Polyhedron {
         }
 
         false
+    }
+
+    /// Get the target vertex index of the edge at the given edge index, if possible.
+    fn target_index_from_index(&self, edge_index: usize) -> Option<usize> {
+        self.edges.get(edge_index).and_then(|e| e.target)
+    }
+
+    /// Get the target vertex index of the edge at the given edge index, if possible.
+    fn target_index(&self, edge_index: Option<usize>) -> Option<usize> {
+        edge_index.and_then(|i| self.target_index_from_index(i))
+    }
+
+    /// Get the source vertex index of the edge at the given edge index, if possible.
+    fn source_index(&self, edge_index: Option<usize>) -> Option<usize> {
+        edge_index
+            .and_then(|i| self.edges.get(i))
+            .and_then(|e| self.target_index(e.flip))
     }
 }
 
