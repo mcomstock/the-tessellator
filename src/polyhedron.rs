@@ -19,6 +19,8 @@ use self::{StartingEdges::*, StartingFaces::*, StartingVertices::*};
 use crate::pool::Pool;
 use crate::vector3::{Plane, PlaneLocation, Vector3};
 
+use std::cell::RefCell;
+
 type Vector = Vector3<f64>;
 type Plane64 = Plane<f64>;
 
@@ -34,8 +36,9 @@ struct HalfEdge {
     /// The index of the next half-edge in the polyhedron face.
     next: Option<usize>,
 
+    // TODO: This might not need interior mutability to work.
     /// The vertex this half-edge belongs to.
-    target: Option<usize>,
+    target: RefCell<Option<usize>>,
 
     /// The polyhedron face this half-edge is in.
     face: Option<usize>,
@@ -283,15 +286,15 @@ impl Polyhedron {
         debug_assert_eq!(bul, BUL as usize);
 
         let make_face = |starting_edge_index| Face {
-            point_index: Option::None,
+            point_index: None,
             starting_edge_index: starting_edge_index as usize,
         };
 
         let make_edge = |face, flip, target, next| HalfEdge {
-            flip: Option::Some(flip as usize),
-            next: Option::Some(next as usize),
-            target: Option::Some(target as usize),
-            face: Option::Some(face as usize),
+            flip: Some(flip as usize),
+            next: Some(next as usize),
+            target: RefCell::new(Some(target as usize)),
+            face: Some(face as usize),
         };
 
         // Add each face in order, so that the index matches the one assigned in StartingFaces.
@@ -390,7 +393,7 @@ impl Polyhedron {
 
         // Search the edges until an outgoing one is found.
         for edge in self.edges.into_iter() {
-            let target_index = edge.target.unwrap();
+            let target_index = edge.target.borrow().unwrap();
             let target = self.vertices.get(target_index).unwrap();
 
             // If the edge is ingoing, check its flip.
@@ -428,7 +431,7 @@ impl Polyhedron {
                     plane.vector_location(
                         &self
                             .vertices
-                            .get_or_fail(self.edges.get_or_fail(index).target.unwrap()),
+                            .get_or_fail(self.edges.get_or_fail(index).target.borrow().unwrap()),
                         TOLERANCE
                     ),
                     PlaneLocation::Inside
@@ -520,13 +523,11 @@ impl Polyhedron {
                     .vector_location(self.vertices.get(current_vertex_index).unwrap(), TOLERANCE);
             }
 
-            // TODO: This should cause a bug if previous intersection is not set in the loop.
-            // TODO: Make sure this is set to the current value of previous_intersection, not the
-            // inital one.
+            // TODO: This should cause a bug if `previous_intersection` is not set in the loop.
             self.edges
                 .get_or_fail(outgoing_edge_index)
                 .target
-                .map(|_| previous_intersection);
+                .replace(Some(previous_intersection.unwrap()));
 
             // The test condition that should break out of the loop.
             if outgoing_edge_index == first_outgoing_edge_index {
@@ -539,7 +540,10 @@ impl Polyhedron {
 
     /// Get the target vertex index of the edge at the given edge index, if possible.
     fn target_index_from_index(&self, edge_index: usize) -> Option<usize> {
-        self.edges.get(edge_index).and_then(|e| e.target)
+        // TODO get rid of clone
+        self.edges
+            .get(edge_index)
+            .and_then(|e| e.target.borrow().clone())
     }
 
     /// Get the target vertex index of the edge at the given edge index, if possible.
