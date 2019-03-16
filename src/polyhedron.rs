@@ -529,6 +529,24 @@ impl Polyhedron {
                 .target
                 .replace(Some(previous_intersection.unwrap()));
 
+            if need_to_cut {
+                let current_intersection_vertex_index = if previous_location == PlaneLocation::Incident {
+                    let old_vertex = self.vertices.get_or_fail(previous_vertex_index).to_owned();
+
+                    // TODO: Can this be cloned instead?
+                    let vertex: Vector = Vector {
+                        x: old_vertex.x,
+                        y: old_vertex.y,
+                        z: old_vertex.z,
+                    };
+
+                    self.vertices.add(vertex)
+                } else {
+                    // TODO: Build new vertex at intersection.
+                    1
+                };
+            }
+
             // The test condition that should break out of the loop.
             if outgoing_edge_index == first_outgoing_edge_index {
                 break;
