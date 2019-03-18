@@ -19,8 +19,6 @@ use self::{StartingEdges::*, StartingFaces::*, StartingVertices::*};
 use crate::pool::Pool;
 use crate::vector3::{Plane, PlaneLocation, Vector3};
 
-use std::cell::RefCell;
-
 type Vector = Vector3<f64>;
 type Plane64 = Plane<f64>;
 
@@ -38,7 +36,7 @@ struct HalfEdge {
 
     // TODO: This might not need interior mutability to work.
     /// The vertex this half-edge belongs to.
-    target: RefCell<Option<usize>>,
+    target: Option<usize>,
 
     /// The polyhedron face this half-edge is in.
     face: Option<usize>,
@@ -293,7 +291,7 @@ impl Polyhedron {
         let make_edge = |face, flip, target, next| HalfEdge {
             flip: Some(flip as usize),
             next: Some(next as usize),
-            target: RefCell::new(Some(target as usize)),
+            target: Some(target as usize),
             face: Some(face as usize),
         };
 
@@ -393,7 +391,7 @@ impl Polyhedron {
 
         // Search the edges until an outgoing one is found.
         for edge in self.edges.into_iter() {
-            let target_index = edge.target.borrow().unwrap();
+            let target_index = edge.target.unwrap();
             let target = self.vertices.get(target_index).unwrap();
 
             // If the edge is ingoing, check its flip.
@@ -431,7 +429,7 @@ impl Polyhedron {
                     plane.vector_location(
                         &self
                             .vertices
-                            .get_or_fail(self.edges.get_or_fail(index).target.borrow().unwrap()),
+                            .get_or_fail(self.edges.get_or_fail(index).target.unwrap()),
                         TOLERANCE
                     ),
                     PlaneLocation::Inside
@@ -524,13 +522,14 @@ impl Polyhedron {
             }
 
             // TODO: This should cause a bug if `previous_intersection` is not set in the loop.
-            self.edges
-                .get_or_fail(outgoing_edge_index)
-                .target
-                .replace(Some(previous_intersection.unwrap()));
+            self.edges.get_mut_or_fail(outgoing_edge_index).target =
+                Some(previous_intersection.unwrap());
 
             if need_to_cut {
-                let current_intersection_vertex_index = if previous_location == PlaneLocation::Incident {
+                // TODO: Refactor this massive condition into its own function.
+                let current_intersection_vertex_index = if previous_location
+                    == PlaneLocation::Incident
+                {
                     let old_vertex = self.vertices.get_or_fail(previous_vertex_index).to_owned();
 
                     // TODO: Can this be cloned instead?
@@ -542,10 +541,43 @@ impl Polyhedron {
 
                     self.vertices.add(vertex)
                 } else {
-                    // TODO: Build new vertex at intersection.
-                    1
+                    let vertex = plane.intersection(
+                        self.vertices.get_or_fail(previous_vertex_index),
+                        self.vertices.get_or_fail(current_vertex_index),
+                    );
+
+                    self.vertices.add(vertex)
                 };
+
+                let current_face_index = self.edges.get_or_fail(outgoing_edge_index).face.unwrap();
+
+                // Make sure that the face's starting edge is one that won't end up getting destroyed.
+                self.faces
+                    .get_mut_or_fail(current_face_index)
+                    .starting_edge_index = outgoing_edge_index;
+
+                let bridge_edge_index = self.edges.add(HalfEdge {
+                    face: Some(outside_face_index),
+                    target: Some(current_intersection_vertex_index),
+                    flip: Some(outside_face_edge_index),
+                    next: Some(current_edge_index),
+                });
+
+                self.edges.get_mut_or_fail(outside_face_edge_index).flip = Some(bridge_edge_index);
+                self.edges.get_mut_or_fail(outgoing_edge_index).next = Some(bridge_edge_index);
+
+                outside_face_edge_index = self.edges.add(HalfEdge {
+                    face: Some(outside_face_index),
+                    target: Some(current_intersection_vertex_index),
+                    // TODO: This seems wrong
+                    flip: None,
+                    next: Some(outside_face_edge_index),
+                });
+
+                previous_intersection = Some(current_intersection_vertex_index);
             }
+
+            outgoing_edge_index = self.edges.get_or_fail(current_edge_index).flip.unwrap();
 
             // The test condition that should break out of the loop.
             if outgoing_edge_index == first_outgoing_edge_index {
@@ -559,9 +591,7 @@ impl Polyhedron {
     /// Get the target vertex index of the edge at the given edge index, if possible.
     fn target_index_from_index(&self, edge_index: usize) -> Option<usize> {
         // TODO get rid of clone
-        self.edges
-            .get(edge_index)
-            .and_then(|e| e.target.borrow().clone())
+        self.edges.get(edge_index).and_then(|e| e.target.clone())
     }
 
     /// Get the target vertex index of the edge at the given edge index, if possible.

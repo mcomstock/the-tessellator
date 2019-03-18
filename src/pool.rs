@@ -128,9 +128,26 @@ impl<T> Pool<T> {
         }
     }
 
+    /// Get an option that may contain a mutable reference to an element, if one exists at the
+    /// given index.
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+        match &mut self.data[index] {
+            PoolChunk::Value(v) => Some(v),
+            _ => None,
+        }
+    }
+
     /// Get an element, or fail if it is not found.
     pub fn get_or_fail(&self, index: usize) -> &T {
         match &self.data[index] {
+            PoolChunk::Value(v) => v,
+            _ => panic!(),
+        }
+    }
+
+    // Get a mutable reference to an element, or fail if the element is not found.
+    pub fn get_mut_or_fail(&mut self, index: usize) -> &mut T {
+        match &mut self.data[index] {
             PoolChunk::Value(v) => v,
             _ => panic!(),
         }

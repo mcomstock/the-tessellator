@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::ops::{Add, Mul, Neg, Sub};
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
 /// Allow a Vector3 to contain any reasonable float type.
 pub trait Vector3Float:
@@ -23,6 +23,7 @@ pub trait Vector3Float:
     + Copy
     + PartialOrd
     + Add<Output = Self>
+    + Div<Output = Self>
     + Mul<Output = Self>
     + Neg<Output = Self>
     + Sub<Output = Self>
@@ -34,6 +35,7 @@ impl<T> Vector3Float for T where
         + Copy
         + PartialOrd
         + Add<Output = Self>
+        + Div<Output = Self>
         + Mul<Output = Self>
         + Neg<Output = Self>
         + Sub<Output = Self>
@@ -53,6 +55,39 @@ impl<Real: Vector3Float> Vector3<Real> {
     /// Get the dot product of two vectors.
     fn dot(a: &Vector3<Real>, b: &Vector3<Real>) -> Real {
         a.x * b.x + a.y * b.y + a.z * b.z
+    }
+
+    /// Get the result of scaling a vector.
+    fn scale(self, scalar: Real) -> Vector3<Real> {
+        Vector3 {
+            x: self.x * scalar,
+            y: self.y * scalar,
+            z: self.z * scalar,
+        }
+    }
+}
+
+impl<Real: Vector3Float> Add for &Vector3<Real> {
+    type Output = Vector3<Real>;
+
+    fn add(self, other: &Vector3<Real>) -> Vector3<Real> {
+        Vector3 {
+            x: self.x + other.x,
+            y: self.y + other.y,
+            z: self.z + other.z,
+        }
+    }
+}
+
+impl<Real: Vector3Float> Sub for &Vector3<Real> {
+    type Output = Vector3<Real>;
+
+    fn sub(self, other: &Vector3<Real>) -> Vector3<Real> {
+        Vector3 {
+            x: self.x - other.x,
+            y: self.y - other.y,
+            z: self.z - other.z,
+        }
     }
 }
 
@@ -122,6 +157,15 @@ impl<Real: Vector3Float> Plane<Real> {
     /// Thus D = (a, b, c) * (d, e, f).
     fn offset_inverse(&self, vector: &Vector3<Real>) -> Real {
         Vector3::dot(&self.unit_normal, vector)
+    }
+
+    /// Get the point at the intesection of the plane and the line that passes between two points.
+    pub fn intersection(&self, a: &Vector3<Real>, b: &Vector3<Real>) -> Vector3<Real> {
+        let a_offset = self.offset_inverse(a);
+        let b_offset = self.offset_inverse(b);
+
+        // TODO: Make sure that this is the best way to calculate the intersection.
+        return a + &(b - a).scale((self.plane_offset - a_offset) / (b_offset - a_offset));
     }
 }
 
