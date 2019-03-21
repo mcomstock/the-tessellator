@@ -471,8 +471,8 @@ impl Polyhedron {
         debug_assert_eq!(outside_face_index, actual_face_index);
 
         // TODO check if it's fine to do this on-demand instead of batching
-        let mut vertices_to_destroy = Vec::<usize>::new();
-        let mut edges_to_destroy = Vec::<usize>::new();
+        let mut vertices_to_destroy = Vec::<Option<usize>>::new();
+        let mut edges_to_destroy = Vec::<Option<usize>>::new();
 
         let mut outside_face_edge_index = first_outside_face_edge_index;
         let mut outgoing_edge_index = first_outgoing_edge_index;
@@ -480,29 +480,38 @@ impl Polyhedron {
         let mut previous_intersection: Option<usize> = None;
 
         loop {
-            let mut previous_vertex_index =
-                self.target_index_from_index(outgoing_edge_index).unwrap();
+            let mut previous_vertex_index = self.edges.get_or_fail(outgoing_edge_index).target;
             vertices_to_destroy.push(previous_vertex_index);
 
             // The target vertex should not be inside.
             debug_assert_ne!(
-                plane.vector_location(self.vertices.get_or_fail(previous_vertex_index), TOLERANCE),
+                plane.vector_location(
+                    self.vertices.get_or_fail(previous_vertex_index.unwrap()),
+                    TOLERANCE
+                ),
                 PlaneLocation::Inside
             );
 
             // Set the next edge and target vertex to potentially cut.
-            let mut current_edge_index = self.next_index_from_index(outgoing_edge_index).unwrap();
-            let mut current_vertex_index =
-                self.target_index_from_index(current_edge_index).unwrap();
+            let mut current_edge_index = self.edges.get_or_fail(outgoing_edge_index).target;
+            let mut current_vertex_index = self.target_index(current_edge_index);
 
             // TODO: Is there a better way to check this?
             // If the starting vertex was outside the plane, we definitely need to cut.
-            let mut need_to_cut = plane
-                .vector_location(self.vertices.get(previous_vertex_index).unwrap(), TOLERANCE)
-                == PlaneLocation::Outside;
+            let mut need_to_cut = plane.vector_location(
+                previous_vertex_index
+                    .and_then(|i| self.vertices.get(i))
+                    .unwrap(),
+                TOLERANCE,
+            ) == PlaneLocation::Outside;
 
-            let mut previous_location =
-                plane.vector_location(self.vertices.get(current_vertex_index).unwrap(), TOLERANCE);
+            let mut previous_location = plane.vector_location(
+                current_vertex_index
+                    .and_then(|i| self.vertices.get(i))
+                    .unwrap(),
+                TOLERANCE,
+            );
+
             let mut current_location = previous_location.clone();
 
             // Keep going until we are back inside.
@@ -514,11 +523,13 @@ impl Polyhedron {
                 previous_vertex_index = current_vertex_index;
                 previous_location = current_location;
 
-                current_edge_index = self.next_index_from_index(current_edge_index).unwrap();
-                current_vertex_index = self.target_index_from_index(current_edge_index).unwrap();
+                current_edge_index = self.next_index(current_edge_index);
+                current_vertex_index = self.target_index(current_edge_index);
 
-                current_location = plane
-                    .vector_location(self.vertices.get(current_vertex_index).unwrap(), TOLERANCE);
+                current_location = plane.vector_location(
+                    self.vertices.get_or_fail(current_vertex_index.unwrap()),
+                    TOLERANCE,
+                );
             }
 
             // TODO: This should cause a bug if `previous_intersection` is not set in the loop.
@@ -527,40 +538,39 @@ impl Polyhedron {
 
             if need_to_cut {
                 // TODO: Refactor this massive condition into its own function.
-                let current_intersection_vertex_index = if previous_location
-                    == PlaneLocation::Incident
-                {
-                    let old_vertex = self.vertices.get_or_fail(previous_vertex_index).to_owned();
+                let current_intersection_vertex_index =
+                    if previous_location == PlaneLocation::Incident {
+                        let old_vertex = self.vertices.get_or_fail(previous_vertex_index.unwrap());
 
-                    // TODO: Can this be cloned instead?
-                    let vertex: Vector = Vector {
-                        x: old_vertex.x,
-                        y: old_vertex.y,
-                        z: old_vertex.z,
+                        // TODO: Can this be cloned instead?
+                        let vertex: Vector = Vector {
+                            x: old_vertex.x,
+                            y: old_vertex.y,
+                            z: old_vertex.z,
+                        };
+
+                        self.vertices.add(vertex)
+                    } else {
+                        let vertex = plane.intersection(
+                            self.vertices.get_or_fail(previous_vertex_index.unwrap()),
+                            self.vertices.get_or_fail(current_vertex_index.unwrap()),
+                        );
+
+                        self.vertices.add(vertex)
                     };
 
-                    self.vertices.add(vertex)
-                } else {
-                    let vertex = plane.intersection(
-                        self.vertices.get_or_fail(previous_vertex_index),
-                        self.vertices.get_or_fail(current_vertex_index),
-                    );
-
-                    self.vertices.add(vertex)
-                };
-
-                let current_face_index = self.edges.get_or_fail(outgoing_edge_index).face.unwrap();
+                let current_face_index = self.edges.get_or_fail(outgoing_edge_index).face;
 
                 // Make sure that the face's starting edge is one that won't end up getting destroyed.
                 self.faces
-                    .get_mut_or_fail(current_face_index)
+                    .get_mut_or_fail(current_face_index.unwrap())
                     .starting_edge_index = outgoing_edge_index;
 
                 let bridge_edge_index = self.edges.add(HalfEdge {
                     face: Some(outside_face_index),
                     target: Some(current_intersection_vertex_index),
                     flip: Some(outside_face_edge_index),
-                    next: Some(current_edge_index),
+                    next: current_edge_index,
                 });
 
                 self.edges.get_mut_or_fail(outside_face_edge_index).flip = Some(bridge_edge_index);
@@ -577,7 +587,11 @@ impl Polyhedron {
                 previous_intersection = Some(current_intersection_vertex_index);
             }
 
-            outgoing_edge_index = self.edges.get_or_fail(current_edge_index).flip.unwrap();
+            outgoing_edge_index = self
+                .edges
+                .get_or_fail(current_edge_index.unwrap())
+                .flip
+                .unwrap();
 
             // The test condition that should break out of the loop.
             if outgoing_edge_index == first_outgoing_edge_index {
@@ -585,18 +599,70 @@ impl Polyhedron {
             }
         }
 
-        false
+        while self
+            .target_index(Some(outgoing_edge_index))
+            .and_then(|i| self.edges.get(i))
+            .is_some()
+        {
+            self.edges.get_mut_or_fail(outgoing_edge_index).target = previous_intersection;
+
+            outgoing_edge_index = self
+                .next_index(Some(outgoing_edge_index))
+                .and_then(|i| self.edges.get_or_fail(i).flip)
+                .unwrap();
+        }
+
+        self.clean_up_vertices(vertices_to_destroy);
+        self.clean_up_edges(&mut edges_to_destroy);
+
+        true
     }
 
-    /// Get the target vertex index of the edge at the given edge index, if possible.
-    fn target_index_from_index(&self, edge_index: usize) -> Option<usize> {
-        // TODO get rid of clone
-        self.edges.get(edge_index).and_then(|e| e.target.clone())
+    /// Remove the vertices of the polyhedron that have been cut off by plane cutting.
+    fn clean_up_vertices(&mut self, vertices_to_destroy: Vec<Option<usize>>) {
+        for vertex_index in vertices_to_destroy {
+            match vertex_index {
+                Some(index) => self.vertices.remove(index),
+                _ => { /* Do nothing */ }
+            }
+        }
+    }
+
+    /// Remove the edges of the polyhedron that have been cut off by plane cutting.
+    fn clean_up_edges(&mut self, edges_to_destroy: &mut Vec<Option<usize>>) {
+        if edges_to_destroy.len() == 0 {
+            return;
+        }
+
+        // Note that the entire region to destroy should be a single connected component.
+        //
+        // We begin by deleting a perimiter around the region to destroy, which marks the
+        // boundary. At the same time, store any edges found in the inside of the region to be
+        // deleted to serve as a starting point for deleting everything else. Any one edge would do,
+        // but since we aren't sure which ones are actually part of the perimiter, we just store
+        // them all.
+        let original_edge_len = edges_to_destroy.len();
+        for i in 1..original_edge_len {
+            let edge_index = edges_to_destroy[i];
+
+            // Store related edges in the deletion region.
+            // TODO can this be done earlier to save time?
+            edges_to_destroy.push(self.flip_index(edge_index));
+
+            match edge_index {
+                Some(index) => self.edges.remove(index),
+                _ => { /* Do nothing */ }
+            }
+        }
+
+        // TODO Finish
     }
 
     /// Get the target vertex index of the edge at the given edge index, if possible.
     fn target_index(&self, edge_index: Option<usize>) -> Option<usize> {
-        edge_index.and_then(|i| self.target_index_from_index(i))
+        edge_index
+            .and_then(|i| self.edges.get(i))
+            .and_then(|e| e.target)
     }
 
     /// Get the source vertex index of the edge at the given edge index, if possible.
@@ -607,13 +673,17 @@ impl Polyhedron {
     }
 
     /// Get the next edge from the current edge index, if possible.
-    fn next_index_from_index(&self, edge_index: usize) -> Option<usize> {
-        self.edges.get(edge_index).and_then(|e| e.next)
+    fn next_index(&self, edge_index: Option<usize>) -> Option<usize> {
+        edge_index
+            .and_then(|i| self.edges.get(i))
+            .and_then(|e| e.next)
     }
 
-    /// Get the next edge from the current edge index, if possible.
-    fn next_index(&self, edge_index: Option<usize>) -> Option<usize> {
-        edge_index.and_then(|i| self.next_index_from_index(i))
+    // Get the flip edge from the current edge index, if possible.
+    fn flip_index(&self, edge_index: Option<usize>) -> Option<usize> {
+        edge_index
+            .and_then(|i| self.edges.get(i))
+            .and_then(|e| e.flip)
     }
 }
 
