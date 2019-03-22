@@ -641,21 +641,69 @@ impl Polyhedron {
         // deleted to serve as a starting point for deleting everything else. Any one edge would do,
         // but since we aren't sure which ones are actually part of the perimiter, we just store
         // them all.
-        let original_edge_len = edges_to_destroy.len();
-        for i in 1..original_edge_len {
-            let edge_index = edges_to_destroy[i];
+        let mut connected_components_to_destroy =
+            Vec::<Option<usize>>::with_capacity(edges_to_destroy.len());
 
+        for edge_index in edges_to_destroy {
             // Store related edges in the deletion region.
             // TODO can this be done earlier to save time?
-            edges_to_destroy.push(self.flip_index(edge_index));
+            connected_components_to_destroy.push(self.flip_index(*edge_index));
 
             match edge_index {
-                Some(index) => self.edges.remove(index),
+                Some(index) => self.edges.remove(*index),
                 _ => { /* Do nothing */ }
             }
         }
 
-        // TODO Finish
+        // Search over the region to destroy and do the destroying.
+        for edge_index in connected_components_to_destroy {
+            // TODO We thought that only a single non-perimeter edge would be enough, since but it
+            // seems that that was not the case in the original implementation. It might be worth
+            // looking into again, but for now, try them all.
+            match edge_index {
+                Some(index) => self.mark_sweep(index),
+                _ => { /* Do nothing */ }
+            }
+        }
+    }
+
+    /// Delete the portion of the polyhedron connected to the given edge.
+    ///
+    /// Note that this function should only be used on portions of the polyhedron that have already
+    /// been cut off, since calling it on an edge connected to the main portion would delete the
+    /// entire polyhedron.
+    fn mark_sweep(&mut self, edge_index: usize) {
+        let starting_edge = match self.edges.get(edge_index) {
+            Some(edge) => edge,
+            _ => return,
+        };
+
+        let flip = starting_edge.flip;
+        let next = starting_edge.next;
+        let target = starting_edge.target;
+        let face = starting_edge.face;
+
+        match flip {
+            Some(f) => self.mark_sweep(f),
+            _ => { /* Do nothing */ }
+        }
+
+        match next {
+            Some(n) => self.mark_sweep(n),
+            _ => { /* Do nothing */ }
+        }
+
+        match target {
+            Some(t) => self.vertices.remove(t),
+            _ => { /* Do nothing */ }
+        }
+
+        match face {
+            Some(f) => self.faces.remove(f),
+            _ => { /* Do nothing */ }
+        }
+
+        self.edges.remove(edge_index);
     }
 
     /// Get the target vertex index of the edge at the given edge index, if possible.
