@@ -201,7 +201,7 @@ enum StartingEdges {
 /// A cell created as the result of Voronoi tessellation. Most of the computation for the
 /// tessellation is done by this struct.
 #[derive(Debug, Default)]
-struct Polyhedron {
+pub struct Polyhedron {
     /// The index of the root edge of the polyhedron.
     root_edge: Option<usize>,
 

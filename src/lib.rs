@@ -14,10 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-mod vector3;
-mod pool;
 pub mod celery;
+pub mod interface;
 pub mod polyhedron;
+mod pool;
+mod vector3;
 
 #[cfg(test)]
 mod tests {

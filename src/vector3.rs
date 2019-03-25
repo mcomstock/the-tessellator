@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::celery::{CeleryPoint, ToCeleryPoint};
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
 /// Allow a Vector3 to contain any reasonable float type.
@@ -88,6 +89,12 @@ impl<Real: Vector3Float> Sub for &Vector3<Real> {
             y: self.y - other.y,
             z: self.z - other.z,
         }
+    }
+}
+
+impl ToCeleryPoint for Vector3<f64> {
+    fn to_celery_point(&self) -> CeleryPoint {
+        (self.x, self.y, self.z)
     }
 }
 
@@ -166,6 +173,43 @@ impl<Real: Vector3Float> Plane<Real> {
 
         // TODO: Make sure that this is the best way to calculate the intersection.
         return a + &(b - a).scale((self.plane_offset - a_offset) / (b_offset - a_offset));
+    }
+}
+
+/// A bounding box for a space.
+pub struct BoundingBox<Real: Vector3Float> {
+    /// The low coordinates of the bounding box.
+    low: Vector3<Real>,
+    /// The high coordinates of the bounding box.
+    high: Vector3<Real>,
+}
+
+impl<Real: Vector3Float> BoundingBox<Real> {
+    /// Adjust the bounding box to contain a point.
+    pub fn adjust_to_contain(&mut self, new_point: &Vector3<Real>) {
+        if new_point.x < self.low.x {
+            self.low.x = new_point.x
+        };
+
+        if new_point.y < self.low.y {
+            self.low.y = new_point.y
+        };
+
+        if new_point.z < self.low.z {
+            self.low.z = new_point.z
+        };
+
+        if new_point.x > self.high.x {
+            self.high.x = new_point.x
+        };
+
+        if new_point.y > self.high.y {
+            self.high.y = new_point.y
+        };
+
+        if new_point.z > self.high.z {
+            self.high.z = new_point.z
+        };
     }
 }
 
