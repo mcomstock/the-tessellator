@@ -16,6 +16,7 @@
 
 pub mod celery;
 pub mod interface;
+pub mod float;
 pub mod polyhedron;
 mod pool;
 mod vector3;

@@ -15,43 +15,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::celery::{CeleryPoint, ToCeleryPoint};
-use std::ops::{Add, Div, Mul, Neg, Sub};
+use crate::celery::ToCeleryPoint;
+use crate::float::Float;
+use std::ops::{Add, Sub};
 
 /// Allow a Vector3 to contain any reasonable float type.
-pub trait Vector3Float:
-    Default
-    + Copy
-    + PartialOrd
-    + Add<Output = Self>
-    + Div<Output = Self>
-    + Mul<Output = Self>
-    + Neg<Output = Self>
-    + Sub<Output = Self>
-{
-}
-
-impl<T> Vector3Float for T where
-    T: Default
-        + Copy
-        + PartialOrd
-        + Add<Output = Self>
-        + Div<Output = Self>
-        + Mul<Output = Self>
-        + Neg<Output = Self>
-        + Sub<Output = Self>
-{
-}
 
 /// A three-dimensional vector that implements a number of mathematical operations.
 #[derive(Debug, Default)]
-pub struct Vector3<Real: Vector3Float> {
+pub struct Vector3<Real: Float> {
     pub x: Real,
     pub y: Real,
     pub z: Real,
 }
 
-impl<Real: Vector3Float> Vector3<Real> {
+impl<Real: Float> Vector3<Real> {
     // TODO constexpr
     /// Get the dot product of two vectors.
     fn dot(a: &Vector3<Real>, b: &Vector3<Real>) -> Real {
@@ -68,7 +46,7 @@ impl<Real: Vector3Float> Vector3<Real> {
     }
 }
 
-impl<Real: Vector3Float> Add for &Vector3<Real> {
+impl<Real: Float> Add for &Vector3<Real> {
     type Output = Vector3<Real>;
 
     fn add(self, other: &Vector3<Real>) -> Vector3<Real> {
@@ -80,7 +58,7 @@ impl<Real: Vector3Float> Add for &Vector3<Real> {
     }
 }
 
-impl<Real: Vector3Float> Sub for &Vector3<Real> {
+impl<Real: Float> Sub for &Vector3<Real> {
     type Output = Vector3<Real>;
 
     fn sub(self, other: &Vector3<Real>) -> Vector3<Real> {
@@ -92,9 +70,17 @@ impl<Real: Vector3Float> Sub for &Vector3<Real> {
     }
 }
 
-impl ToCeleryPoint for Vector3<f64> {
-    fn to_celery_point(&self) -> CeleryPoint {
-        (self.x, self.y, self.z)
+impl<Real: Float> ToCeleryPoint<Real> for Vector3<Real> {
+    fn get_x(&self) -> Real {
+        self.x
+    }
+
+    fn get_y(&self) -> Real {
+        self.y
+    }
+
+    fn get_z(&self) -> Real {
+        self.z
     }
 }
 
@@ -112,7 +98,7 @@ pub enum PlaneLocation {
 /// A two-dimensional plane defined by an offset and a normal vector. The plane is given by
 ///   unit_normal.x * x + unit_normal.y * y + unit_normal.z * z + plane_offset = 0
 #[derive(Debug, Default)]
-pub struct Plane<Real: Vector3Float> {
+pub struct Plane<Real: Float> {
     /// A unit normal vector to the plane. Note that this gives the "direction" of the plane.
     pub unit_normal: Vector3<Real>,
 
@@ -120,7 +106,7 @@ pub struct Plane<Real: Vector3Float> {
     pub plane_offset: Real,
 }
 
-impl<Real: Vector3Float> Plane<Real> {
+impl<Real: Float> Plane<Real> {
     // TODO: This can be constexpr.
     /// Get the location of a point relative to the plane given the signed distance between the
     /// two (point - plane).
@@ -177,14 +163,15 @@ impl<Real: Vector3Float> Plane<Real> {
 }
 
 /// A bounding box for a space.
-pub struct BoundingBox<Real: Vector3Float> {
+#[derive(Debug, Default)]
+pub struct BoundingBox<Real: Float> {
     /// The low coordinates of the bounding box.
     low: Vector3<Real>,
     /// The high coordinates of the bounding box.
     high: Vector3<Real>,
 }
 
-impl<Real: Vector3Float> BoundingBox<Real> {
+impl<Real: Float> BoundingBox<Real> {
     /// Adjust the bounding box to contain a point.
     pub fn adjust_to_contain(&mut self, new_point: &Vector3<Real>) {
         if new_point.x < self.low.x {
@@ -211,14 +198,26 @@ impl<Real: Vector3Float> BoundingBox<Real> {
             self.high.z = new_point.z
         };
     }
+
+    /// Add padding to the bounding box.
+    pub fn pad(&mut self, padding: Real) {
+        self.low.x = self.low.x - padding;
+        self.low.y = self.low.y - padding;
+        self.low.z = self.low.z - padding;
+
+        self.high.x = self.high.x + padding;
+        self.high.y = self.high.y + padding;
+        self.high.z = self.high.z + padding;
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Vector3;
+    use crate::float::Float64;
 
     #[test]
     fn create_vector3() {
-        let _vector = Vector3::<f64>::default();
+        let _vector = Vector3::<Float64>::default();
     }
 }

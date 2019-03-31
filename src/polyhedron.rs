@@ -16,13 +16,9 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use self::{StartingEdges::*, StartingFaces::*, StartingVertices::*};
+use crate::float::Float;
 use crate::pool::Pool;
 use crate::vector3::{Plane, PlaneLocation, Vector3};
-
-type Vector = Vector3<f64>;
-type Plane64 = Plane<f64>;
-
-const TOLERANCE: f64 = 1e-12;
 
 /// A half-edge structure. Two half-edges make up an edge in the polyhedron, each pointing to one
 /// of the two vertices that make up that edge.
@@ -54,12 +50,12 @@ struct Face {
 
 /// Contains a face and additional information about that face.
 #[derive(Debug, Default)]
-struct FaceData {
+struct FaceData<Real: Float> {
     /// The index of the relevant face.
     face_index: usize,
 
     /// The vector normal to the face.
-    weighted_normal: Vector,
+    weighted_normal: Vector3<Real>,
 }
 
 // In general, the faces will be referred to using single characters,
@@ -201,19 +197,19 @@ enum StartingEdges {
 /// A cell created as the result of Voronoi tessellation. Most of the computation for the
 /// tessellation is done by this struct.
 #[derive(Debug, Default)]
-pub struct Polyhedron {
+pub struct Polyhedron<Real: Float> {
     /// The index of the root edge of the polyhedron.
     root_edge: Option<usize>,
 
     /// The edges of the polyhedron.
     edges: Pool<HalfEdge>,
     /// The vertices around the polyhedron.
-    vertices: Pool<Vector>,
+    vertices: Pool<Vector3<Real>>,
     /// The faces of the polyhedron.
     faces: Pool<Face>,
 
     /// The face data.
-    face_data: Vec<FaceData>,
+    face_data: Vec<FaceData<Real>>,
 
     /// A list of vertices to be deleted.
     vertices_to_destroy: Vec<usize>,
@@ -227,16 +223,21 @@ pub struct Polyhedron {
     max_neighbor_distance: f64,
 }
 
-impl Polyhedron {
+impl<Real: Float> Polyhedron<Real> {
+    /// The tolerance within which two floats should be considered equal.
+    fn tolerance() -> Real {
+        Real::from(1e-12)
+    }
+
     /// Get a new polyhedron initialized as a cube.
     pub fn new(
-        x_min: f64,
-        y_min: f64,
-        z_min: f64,
-        x_max: f64,
-        y_max: f64,
-        z_max: f64,
-    ) -> Polyhedron {
+        x_min: Real,
+        y_min: Real,
+        z_min: Real,
+        x_max: Real,
+        y_max: Real,
+        z_max: Real,
+    ) -> Polyhedron<Real> {
         let (root_edge, vertices, faces, edges) =
             Polyhedron::build_cube(x_min, y_min, z_min, x_max, y_max, z_max);
 
@@ -251,18 +252,18 @@ impl Polyhedron {
 
     /// Construct the initial polyhedron as a cube.
     fn build_cube(
-        x_min: f64,
-        y_min: f64,
-        z_min: f64,
-        x_max: f64,
-        y_max: f64,
-        z_max: f64,
-    ) -> (Option<usize>, Pool<Vector>, Pool<Face>, Pool<HalfEdge>) {
-        let mut vertices = Pool::<Vector>::with_capacity(8);
+        x_min: Real,
+        y_min: Real,
+        z_min: Real,
+        x_max: Real,
+        y_max: Real,
+        z_max: Real,
+    ) -> (Option<usize>, Pool<Vector3<Real>>, Pool<Face>, Pool<HalfEdge>) {
+        let mut vertices = Pool::<Vector3<Real>>::with_capacity(8);
         let mut faces = Pool::<Face>::with_capacity(6);
         let mut edges = Pool::<HalfEdge>::with_capacity(24);
 
-        let make_vertex = |x, y, z| Vector { x, y, z };
+        let make_vertex = |x, y, z| Vector3::<Real> { x, y, z };
 
         // Add each vertex in order, so that the index matches the one assigned in StartingVertices.
         let fdl = vertices.add(make_vertex(x_min, y_min, z_min));
@@ -373,12 +374,12 @@ impl Polyhedron {
 
     /// Find the index of an edge that is going out of the plane. The edge does not need to begin
     /// inside the plane to satisfy this condition.
-    fn find_outgoing_edge(&self, plane: &Plane64) -> Option<usize> {
+    fn find_outgoing_edge(&self, plane: &Plane<Real>) -> Option<usize> {
         // Check for any vertices that would be cut off by the plane - these are "outside" vertices.
         // If no such vertices are present, then there is no need to cut at all.
         let mut need_to_cut = false;
         for vertex in self.vertices.into_iter() {
-            if plane.vector_location(vertex, TOLERANCE) == PlaneLocation::Outside {
+            if plane.vector_location(vertex, Polyhedron::tolerance()) == PlaneLocation::Outside {
                 need_to_cut = true;
                 break;
             }
@@ -396,12 +397,12 @@ impl Polyhedron {
 
             // If the edge is ingoing, check its flip.
             // TODO check if this is actually faster
-            match plane.vector_location(&target, TOLERANCE) {
+            match plane.vector_location(&target, Polyhedron::tolerance()) {
                 PlaneLocation::Inside => {
                     let flip_target_index = self.target_index(edge.flip).unwrap();
                     let flip_target = self.vertices.get(flip_target_index).unwrap();
 
-                    if plane.vector_location(flip_target, TOLERANCE) == PlaneLocation::Outside {
+                    if plane.vector_location(flip_target, Polyhedron::tolerance()) == PlaneLocation::Outside {
                         return Some(flip_target_index);
                     }
                 }
@@ -419,7 +420,7 @@ impl Polyhedron {
     }
 
     /// Cut the face of the polyhedron with the given plane.
-    fn cut_with_plane(&mut self, face_to_cut_index: usize, plane: &Plane64) -> bool {
+    fn cut_with_plane(&mut self, face_to_cut_index: usize, plane: &Plane<Real>) -> bool {
         // TODO check validity for debug?
 
         let first_outgoing_edge_index = match self.find_outgoing_edge(plane) {
@@ -430,7 +431,7 @@ impl Polyhedron {
                         &self
                             .vertices
                             .get_or_fail(self.edges.get_or_fail(index).target.unwrap()),
-                        TOLERANCE
+                        Polyhedron::tolerance()
                     ),
                     PlaneLocation::Inside
                 );
@@ -442,7 +443,7 @@ impl Polyhedron {
                             self.target_index(self.edges.get_or_fail(index).flip)
                                 .unwrap()
                         ),
-                        TOLERANCE
+                        Polyhedron::tolerance()
                     ),
                     PlaneLocation::Inside
                 );
@@ -487,7 +488,7 @@ impl Polyhedron {
             debug_assert_ne!(
                 plane.vector_location(
                     self.vertices.get_or_fail(previous_vertex_index.unwrap()),
-                    TOLERANCE
+                    Polyhedron::tolerance()
                 ),
                 PlaneLocation::Inside
             );
@@ -502,14 +503,14 @@ impl Polyhedron {
                 previous_vertex_index
                     .and_then(|i| self.vertices.get(i))
                     .unwrap(),
-                TOLERANCE,
+                Polyhedron::tolerance(),
             ) == PlaneLocation::Outside;
 
             let mut previous_location = plane.vector_location(
                 current_vertex_index
                     .and_then(|i| self.vertices.get(i))
                     .unwrap(),
-                TOLERANCE,
+                Polyhedron::tolerance(),
             );
 
             let mut current_location = previous_location.clone();
@@ -528,7 +529,7 @@ impl Polyhedron {
 
                 current_location = plane.vector_location(
                     self.vertices.get_or_fail(current_vertex_index.unwrap()),
-                    TOLERANCE,
+                    Polyhedron::tolerance(),
                 );
             }
 
@@ -543,7 +544,7 @@ impl Polyhedron {
                         let old_vertex = self.vertices.get_or_fail(previous_vertex_index.unwrap());
 
                         // TODO: Can this be cloned instead?
-                        let vertex: Vector = Vector {
+                        let vertex: Vector3<Real> = Vector3 {
                             x: old_vertex.x,
                             y: old_vertex.y,
                             z: old_vertex.z,
@@ -733,11 +734,17 @@ impl Polyhedron {
             .and_then(|i| self.edges.get(i))
             .and_then(|e| e.flip)
     }
+
+    /// Check if the polyhedron has been built yet.
+    pub fn is_built(&self) -> bool {
+        return self.root_edge.is_some()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{HalfEdge, Polyhedron};
+    use crate::float::Float64;
 
     #[test]
     fn create_half_edge() {
@@ -746,11 +753,11 @@ mod tests {
 
     #[test]
     fn build_cube() {
-        Polyhedron::build_cube(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
+        Polyhedron::build_cube(Float64(-1.0), Float64(-1.0), Float64(-1.0), Float64(1.0), Float64(1.0), Float64(1.0));
     }
 
     #[test]
     fn new() {
-        let p = Polyhedron::new(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
+        let p = Polyhedron::new(Float64(-1.0), Float64(-1.0), Float64(-1.0), Float64(1.0), Float64(1.0), Float64(1.0));
     }
 }
