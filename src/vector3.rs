@@ -32,12 +32,12 @@ pub struct Vector3<Real: Float> {
 impl<Real: Float> Vector3<Real> {
     // TODO constexpr
     /// Get the dot product of two vectors.
-    fn dot(a: &Vector3<Real>, b: &Vector3<Real>) -> Real {
+    pub fn dot(a: &Vector3<Real>, b: &Vector3<Real>) -> Real {
         a.x * b.x + a.y * b.y + a.z * b.z
     }
 
     /// Get the result of scaling a vector.
-    fn scale(self, scalar: Real) -> Vector3<Real> {
+    pub fn scale(self, scalar: Real) -> Vector3<Real> {
         Vector3 {
             x: self.x * scalar,
             y: self.y * scalar,
@@ -166,9 +166,9 @@ impl<Real: Float> Plane<Real> {
 #[derive(Debug, Default)]
 pub struct BoundingBox<Real: Float> {
     /// The low coordinates of the bounding box.
-    low: Vector3<Real>,
+    pub low: Vector3<Real>,
     /// The high coordinates of the bounding box.
-    high: Vector3<Real>,
+    pub high: Vector3<Real>,
 }
 
 impl<Real: Float> BoundingBox<Real> {
