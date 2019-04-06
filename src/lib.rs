@@ -15,8 +15,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 pub mod celery;
-pub mod interface;
 pub mod float;
+pub mod interface;
 pub mod polyhedron;
 mod pool;
 mod vector3;

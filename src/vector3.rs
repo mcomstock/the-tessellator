@@ -19,10 +19,8 @@ use crate::celery::ToCeleryPoint;
 use crate::float::Float;
 use std::ops::{Add, Sub};
 
-/// Allow a Vector3 to contain any reasonable float type.
-
 /// A three-dimensional vector that implements a number of mathematical operations.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Vector3<Real: Float> {
     pub x: Real,
     pub y: Real,

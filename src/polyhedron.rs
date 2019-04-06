@@ -258,7 +258,12 @@ impl<Real: Float> Polyhedron<Real> {
         x_max: Real,
         y_max: Real,
         z_max: Real,
-    ) -> (Option<usize>, Pool<Vector3<Real>>, Pool<Face>, Pool<HalfEdge>) {
+    ) -> (
+        Option<usize>,
+        Pool<Vector3<Real>>,
+        Pool<Face>,
+        Pool<HalfEdge>,
+    ) {
         let mut vertices = Pool::<Vector3<Real>>::with_capacity(8);
         let mut faces = Pool::<Face>::with_capacity(6);
         let mut edges = Pool::<HalfEdge>::with_capacity(24);
@@ -402,7 +407,9 @@ impl<Real: Float> Polyhedron<Real> {
                     let flip_target_index = self.target_index(edge.flip).unwrap();
                     let flip_target = self.vertices.get(flip_target_index).unwrap();
 
-                    if plane.vector_location(flip_target, Polyhedron::tolerance()) == PlaneLocation::Outside {
+                    if plane.vector_location(flip_target, Polyhedron::tolerance())
+                        == PlaneLocation::Outside
+                    {
                         return Some(flip_target_index);
                     }
                 }
@@ -737,7 +744,7 @@ impl<Real: Float> Polyhedron<Real> {
 
     /// Check if the polyhedron has been built yet.
     pub fn is_built(&self) -> bool {
-        return self.root_edge.is_some()
+        return self.root_edge.is_some();
     }
 }
 
@@ -753,11 +760,25 @@ mod tests {
 
     #[test]
     fn build_cube() {
-        Polyhedron::build_cube(Float64(-1.0), Float64(-1.0), Float64(-1.0), Float64(1.0), Float64(1.0), Float64(1.0));
+        Polyhedron::build_cube(
+            Float64(-1.0),
+            Float64(-1.0),
+            Float64(-1.0),
+            Float64(1.0),
+            Float64(1.0),
+            Float64(1.0),
+        );
     }
 
     #[test]
     fn new() {
-        let p = Polyhedron::new(Float64(-1.0), Float64(-1.0), Float64(-1.0), Float64(1.0), Float64(1.0), Float64(1.0));
+        let p = Polyhedron::new(
+            Float64(-1.0),
+            Float64(-1.0),
+            Float64(-1.0),
+            Float64(1.0),
+            Float64(1.0),
+            Float64(1.0),
+        );
     }
 }

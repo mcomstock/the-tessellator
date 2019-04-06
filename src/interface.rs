@@ -84,13 +84,66 @@ impl<'a, Real: Float> Diagram<'a, Real> {
         self.internal_indices.resize(len, 0);
         self.original_indices.resize(len, 0);
 
+        // Initialize the new index arrays.
         for i in 0..len {
-            // TODO Stopping point
+            self.internal_indices[i] = i;
+            // Map the original particle indices to the Morton index.
+            self.original_indices[i] = self.morton_index(i);
+        }
+
+        // Sort the internally stored indices.
+        let original = &self.original_indices;
+        self.internal_indices
+            .sort_unstable_by(|a, b| original[*a].cmp(&original[*b]));
+
+        // TODO consider using less of a hack
+        let completed = usize::max_value();
+
+        for cycle_start in 0..len {
+            // TODO is this actually necessary?
+            if self.internal_indices[cycle_start] == completed {
+                continue;
+            }
+
+            // TODO get rid of clone if possible
+            let start_particle = self.particles[cycle_start].clone();
+            let start_group = self.groups[cycle_start];
+
+            let mut current = cycle_start;
+            let mut next = self.internal_indices[current];
+
+            // TODO pretty sure the line below isn't necessary because it happens in the loop.
+            // self.original_indices[current] = self.internal_indices[current];
+
+            while next != cycle_start {
+                self.original_indices[current] = self.internal_indices[current];
+                self.internal_indices[current] = completed;
+
+                // TODO look for a better way to deal with this
+                self.particles[current] = self.particles[next].clone();
+                self.groups[current] = self.groups[next];
+
+                current = next;
+                next = self.internal_indices[next];
+            }
+
+            self.original_indices[current] = self.internal_indices[current];
+            self.internal_indices[current] = completed;
+
+            self.particles[current] = start_particle;
+            self.groups[current] = start_group;
+
+            for i in 0..len {
+                self.internal_indices[self.original_indices[i]] = i;
+            }
         }
     }
 
-    /// Get the Morton index of a single particle.
-    fn morton_index(particle: &Vector3<Real>, bounding_box: &BoundingBox<Real>) -> usize {
+    /// Get the Morton index of the particle at the given index.
+    fn morton_index(&self, index: usize) -> usize {
+        let bounding_box = &self.bounding_box;
+        let particle = &self.particles[index];
+
         // TODO Why the scaling value? That's what we used, but I don't know why.
         let side_lengths = (&bounding_box.high - &bounding_box.low).scale((1.0 / 1024.0).into());
 

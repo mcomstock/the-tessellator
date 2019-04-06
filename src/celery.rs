@@ -150,12 +150,16 @@ struct CeleryCellInfo<Real: Float> {
 
 impl<Real: Float> CeleryCellInfo<Real> {
     /// Get the computed cell info for a collection of points.
-    fn new<PointType: ToCeleryPoint<Real>>(pts: &[PointType], bounds: &CeleryBounds<Real>) -> CeleryCellInfo<Real> {
+    fn new<PointType: ToCeleryPoint<Real>>(
+        pts: &[PointType],
+        bounds: &CeleryBounds<Real>,
+    ) -> CeleryCellInfo<Real> {
         let num_points: Real = Real::from(pts.len());
 
         // The number of cell "lenghts" that should span each dimension in the cell array. The
         // cast to `usize` rounds toward zero, so add 1 to round up.
-        let cells_per_dimension: usize = (num_points / CeleryCellInfo::cell_density()).cbrt().into() + 1;
+        let cells_per_dimension: usize =
+            (num_points / CeleryCellInfo::cell_density()).cbrt().into() + 1;
 
         let x_size = (bounds.x_max - bounds.x_min) / Real::from(cells_per_dimension);
         let y_size = (bounds.y_max - bounds.y_min) / Real::from(cells_per_dimension);
@@ -230,7 +234,8 @@ impl<'a, Real: Float, PointType: ToCeleryPoint<Real> + Default> Celery<'a, Real,
 
         let cells = Celery::get_cells(pts, &bounds, &cell_info);
         let sorted_indices = Celery::get_sorted_indices(pts, &cells);
-        let delimiters = Celery::<Real, PointType>::get_delimiters(&cells, &sorted_indices, &cell_info);
+        let delimiters =
+            Celery::<Real, PointType>::get_delimiters(&cells, &sorted_indices, &cell_info);
         let search_order = Celery::<Real, PointType>::get_search_order(&cell_info);
 
         Celery::<Real, PointType> {
@@ -245,7 +250,11 @@ impl<'a, Real: Float, PointType: ToCeleryPoint<Real> + Default> Celery<'a, Real,
     }
 
     /// Get the x-index of the cell from an x-coordinate.
-    fn get_x_cell_index(x: Real, bounds: &CeleryBounds<Real>, cell_info: &CeleryCellInfo<Real>) -> usize {
+    fn get_x_cell_index(
+        x: Real,
+        bounds: &CeleryBounds<Real>,
+        cell_info: &CeleryCellInfo<Real>,
+    ) -> usize {
         // This is necessary because of the potential for floating point error, placing the
         // coordinate just outside the bounds.
         if x >= bounds.x_max {
@@ -257,7 +266,11 @@ impl<'a, Real: Float, PointType: ToCeleryPoint<Real> + Default> Celery<'a, Real,
     }
 
     /// Get the y-index of the cell from an y-coordinate.
-    fn get_y_cell_index(y: Real, bounds: &CeleryBounds<Real>, cell_info: &CeleryCellInfo<Real>) -> usize {
+    fn get_y_cell_index(
+        y: Real,
+        bounds: &CeleryBounds<Real>,
+        cell_info: &CeleryCellInfo<Real>,
+    ) -> usize {
         // This is necessary because of the potential for floating point error, placing the
         // coordinate just outside the bounds.
         if y >= bounds.y_max {
@@ -269,7 +282,11 @@ impl<'a, Real: Float, PointType: ToCeleryPoint<Real> + Default> Celery<'a, Real,
     }
 
     /// Get the z-index of the cell from an z-coordinate.
-    fn get_z_cell_index(z: Real, bounds: &CeleryBounds<Real>, cell_info: &CeleryCellInfo<Real>) -> usize {
+    fn get_z_cell_index(
+        z: Real,
+        bounds: &CeleryBounds<Real>,
+        cell_info: &CeleryCellInfo<Real>,
+    ) -> usize {
         // This is necessary because of the potential for floating point error, placing the
         // coordinate just outside the bounds.
         if z >= bounds.z_max {
@@ -281,13 +298,22 @@ impl<'a, Real: Float, PointType: ToCeleryPoint<Real> + Default> Celery<'a, Real,
     }
 
     /// Get a cell from its x, y, and z cell indices.
-    fn get_cell_from_indices(x: usize, y: usize, z: usize, cell_info: &CeleryCellInfo<Real>) -> usize {
+    fn get_cell_from_indices(
+        x: usize,
+        y: usize,
+        z: usize,
+        cell_info: &CeleryCellInfo<Real>,
+    ) -> usize {
         let cpd = cell_info.cells_per_dimension;
         x * cpd * cpd + y * cpd + z
     }
 
     /// Get the cell a point belongs in.
-    fn get_cell(pt: &PointType, bounds: &CeleryBounds<Real>, cell_info: &CeleryCellInfo<Real>) -> usize {
+    fn get_cell(
+        pt: &PointType,
+        bounds: &CeleryBounds<Real>,
+        cell_info: &CeleryCellInfo<Real>,
+    ) -> usize {
         let (x, y, z) = (pt.get_x(), pt.get_y(), pt.get_z());
         let x_index = Celery::<Real, PointType>::get_x_cell_index(x, bounds, cell_info);
         let y_index = Celery::<Real, PointType>::get_y_cell_index(y, bounds, cell_info);
@@ -727,8 +753,12 @@ impl<'a, Real: Float, PointType: ToCeleryPoint<Real> + Default> Celery<'a, Real,
                     // Since we search through cells in a grid, some cells, such as corners, might
                     // lie outside the radius.
                     if self.check_cell_in_range(x, y, z, radius, i, j, k) {
-                        let cell_index =
-                            Celery::<Real, PointType>::get_cell_from_indices(i, j, k, &self.cell_info);
+                        let cell_index = Celery::<Real, PointType>::get_cell_from_indices(
+                            i,
+                            j,
+                            k,
+                            &self.cell_info,
+                        );
                         cell_indices.push(cell_index);
                     }
                 }
@@ -761,7 +791,9 @@ pub struct ExpandingSearch<'b, 'a: 'b, Real: Float, PointType: ToCeleryPoint<Rea
     z_cell_index: usize,
 }
 
-impl<'b, 'a: 'b, Real: Float, PointType: ToCeleryPoint<Real> + Default + 'a> ExpandingSearch<'b, 'a, Real, PointType> {
+impl<'b, 'a: 'b, Real: Float, PointType: ToCeleryPoint<Real> + Default + 'a>
+    ExpandingSearch<'b, 'a, Real, PointType>
+{
     /// Create a new expanding search from a cell array and a point to search around.
     pub fn new(
         celery: &'b Celery<'a, Real, PointType>,
@@ -853,9 +885,9 @@ mod tests {
 
     use self::rand::{thread_rng, Rng};
     use super::{Celery, DistanceIndex, ExpandingSearch, ToCeleryPoint};
+    use crate::float::Float64;
     use std::collections::HashSet;
     use std::iter::FromIterator;
-    use crate::float::Float64;
 
     #[derive(Debug, Default)]
     struct TestPoint(Float64, Float64, Float64);
@@ -1115,7 +1147,8 @@ mod tests {
     fn expanding_search_center() {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 100);
         let celery = Celery::new(&pts);
-        let mut expanding_search = ExpandingSearch::new(&celery, Float64(0.5), Float64(0.5), Float64(0.5));
+        let mut expanding_search =
+            ExpandingSearch::new(&celery, Float64(0.5), Float64(0.5), Float64(0.5));
 
         assert_eq!(celery.cell_info.cells_per_dimension, 5);
         assert_eq!(celery.delimiters.len(), 126);
@@ -1146,7 +1179,8 @@ mod tests {
     fn expanding_search_corner() {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 100);
         let celery = Celery::new(&pts);
-        let mut expanding_search = ExpandingSearch::new(&celery, Float64(0.0), Float64(0.0), Float64(0.0));
+        let mut expanding_search =
+            ExpandingSearch::new(&celery, Float64(0.0), Float64(0.0), Float64(0.0));
 
         assert_eq!(celery.cell_info.cells_per_dimension, 5);
         assert_eq!(celery.delimiters.len(), 126);
@@ -1177,7 +1211,8 @@ mod tests {
     fn expanding_search_all_at_once() {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 100);
         let celery = Celery::new(&pts);
-        let mut expanding_search = ExpandingSearch::new(&celery, Float64(0.0), Float64(0.0), Float64(0.0));
+        let mut expanding_search =
+            ExpandingSearch::new(&celery, Float64(0.0), Float64(0.0), Float64(0.0));
 
         assert_eq!(celery.cell_info.cells_per_dimension, 5);
         assert_eq!(celery.delimiters.len(), 126);
@@ -1196,7 +1231,8 @@ mod tests {
     fn expanding_search_more_than_all_at_once() {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 100);
         let celery = Celery::new(&pts);
-        let mut expanding_search = ExpandingSearch::new(&celery, Float64(0.0), Float64(0.0), Float64(0.0));
+        let mut expanding_search =
+            ExpandingSearch::new(&celery, Float64(0.0), Float64(0.0), Float64(0.0));
 
         assert_eq!(celery.cell_info.cells_per_dimension, 5);
         assert_eq!(celery.delimiters.len(), 126);

@@ -15,8 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::cmp::Ordering;
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
 pub trait CubeRoot {
     fn cbrt(self) -> Self;
@@ -25,6 +25,7 @@ pub trait CubeRoot {
 pub trait Float:
     Default
     + Copy
+    + Clone
     + Ord
     + PartialOrd
     + Add<Output = Self>
@@ -43,6 +44,7 @@ pub trait Float:
 impl<T> Float for T where
     T: Default
         + Copy
+        + Clone
         + Ord
         + PartialOrd
         + Add<Output = Self>
