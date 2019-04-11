@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::celery::ToCeleryPoint;
 use std::cmp::Ordering;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
@@ -59,6 +60,10 @@ impl<T> Float for T where
         + CubeRoot
 {
 }
+
+pub trait Particle<FloatType>: ToCeleryPoint<FloatType> + Default + Clone {}
+
+impl<T, F> Particle<F> for T where T: ToCeleryPoint<F> + Default + Clone {}
 
 #[derive(Debug, Default, PartialOrd, PartialEq, Copy, Clone)]
 pub struct Float64(pub f64);

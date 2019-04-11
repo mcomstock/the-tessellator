@@ -15,14 +15,14 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::celery::Celery;
-use crate::float::Float;
+use crate::float::{Float, Particle};
 use crate::polyhedron::Polyhedron;
 use crate::vector3::{BoundingBox, Vector3};
 
 /// Contains a vector of particle objects, a spatial data structure, and a polyhedron representing
 /// the container.
 #[derive(Debug)]
-pub struct Diagram<'a, Real: Float> {
+pub struct Diagram<Real: Float, PointType: Particle<Real>> {
     /// Whether or not the diagram has been readied for Voronoi computations.
     initialized: bool,
 
@@ -31,9 +31,6 @@ pub struct Diagram<'a, Real: Float> {
 
     /// The bounding box for the diagram.
     bounding_box: BoundingBox<Real>,
-
-    /// The particles in the diagram.
-    particles: Vec<Vector3<Real>>,
 
     /// A mapping from internal indices to original indices.
     original_indices: Vec<usize>,
@@ -46,20 +43,21 @@ pub struct Diagram<'a, Real: Float> {
     groups: Vec<usize>,
 
     /// The cell array used to determine the relationships between points.
-    cell_array: Celery<'a, Real, Vector3<Real>>,
+    cell_array: Celery<Real, PointType>,
 }
 
-impl<'a, Real: Float> Diagram<'a, Real> {
+impl<Real: Float, PointType: Particle<Real>> Diagram<Real, PointType> {
     /// The number of particle objects in the diagram.
     fn num_particles(&self) -> usize {
-        self.particles.len()
+        self.cell_array.points.len()
     }
 
     /// Add a particle to the diagram with a specified group. This should only be done before the
     /// diagram is initialized.
-    fn add_particle_with_group(&mut self, particle: Vector3<Real>, group: usize) {
-        self.bounding_box.adjust_to_contain(&particle);
-        self.particles.push(particle);
+    fn add_particle_with_group(&mut self, particle: PointType, group: usize) {
+        self.bounding_box
+            .adjust_to_contain(particle.get_x(), particle.get_y(), particle.get_z());
+        self.cell_array.points.push(particle);
         self.groups.push(group);
     }
 
@@ -72,13 +70,15 @@ impl<'a, Real: Float> Diagram<'a, Real> {
 
         self.sort_particles();
 
+        // TODO if a container polyhedron is not given, we need to create one.
+
         self.initialized = true;
     }
 
     /// Sort the particles in Morton order. Morton order (or Z-order) is a method of sorting
     /// multi-dimensional data that preserves the locality of data points.
     fn sort_particles(&mut self) {
-        let len = self.particles.len();
+        let len = self.num_particles();
 
         // Use a dummy value for the resize, since it will get overwritten.
         self.internal_indices.resize(len, 0);
@@ -106,7 +106,7 @@ impl<'a, Real: Float> Diagram<'a, Real> {
             }
 
             // TODO get rid of clone if possible
-            let start_particle = self.particles[cycle_start].clone();
+            let start_particle = self.cell_array.points[cycle_start].clone();
             let start_group = self.groups[cycle_start];
 
             let mut current = cycle_start;
@@ -120,7 +120,7 @@ impl<'a, Real: Float> Diagram<'a, Real> {
                 self.internal_indices[current] = completed;
 
                 // TODO look for a better way to deal with this
-                self.particles[current] = self.particles[next].clone();
+                self.cell_array.points[current] = self.cell_array.points[next].clone();
                 self.groups[current] = self.groups[next];
 
                 current = next;
@@ -130,7 +130,7 @@ impl<'a, Real: Float> Diagram<'a, Real> {
             self.original_indices[current] = self.internal_indices[current];
             self.internal_indices[current] = completed;
 
-            self.particles[current] = start_particle;
+            self.cell_array.points[current] = start_particle;
             self.groups[current] = start_group;
 
             for i in 0..len {
@@ -142,12 +142,17 @@ impl<'a, Real: Float> Diagram<'a, Real> {
     /// Get the Morton index of the particle at the given index.
     fn morton_index(&self, index: usize) -> usize {
         let bounding_box = &self.bounding_box;
-        let particle = &self.particles[index];
+        let particle = &self.cell_array.points[index];
 
         // TODO Why the scaling value? That's what we used, but I don't know why.
         let side_lengths = (&bounding_box.high - &bounding_box.low).scale((1.0 / 1024.0).into());
 
-        let offset = particle - &bounding_box.low;
+        // TODO do this in a reasonable way
+        let offset = &Vector3::<Real> {
+            x: particle.get_x(),
+            y: particle.get_y(),
+            z: particle.get_z(),
+        } - &bounding_box.low;
 
         let x_index: usize = (offset.x / side_lengths.x).into();
         let y_index: usize = (offset.y / side_lengths.y).into();

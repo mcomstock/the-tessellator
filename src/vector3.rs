@@ -171,29 +171,29 @@ pub struct BoundingBox<Real: Float> {
 
 impl<Real: Float> BoundingBox<Real> {
     /// Adjust the bounding box to contain a point.
-    pub fn adjust_to_contain(&mut self, new_point: &Vector3<Real>) {
-        if new_point.x < self.low.x {
-            self.low.x = new_point.x
+    pub fn adjust_to_contain(&mut self, x: Real, y: Real, z: Real) {
+        if x < self.low.x {
+            self.low.x = x
         };
 
-        if new_point.y < self.low.y {
-            self.low.y = new_point.y
+        if y < self.low.y {
+            self.low.y = y
         };
 
-        if new_point.z < self.low.z {
-            self.low.z = new_point.z
+        if z < self.low.z {
+            self.low.z = z
         };
 
-        if new_point.x > self.high.x {
-            self.high.x = new_point.x
+        if x > self.high.x {
+            self.high.x = x
         };
 
-        if new_point.y > self.high.y {
-            self.high.y = new_point.y
+        if y > self.high.y {
+            self.high.y = y
         };
 
-        if new_point.z > self.high.z {
-            self.high.z = new_point.z
+        if z > self.high.z {
+            self.high.z = z
         };
     }
 

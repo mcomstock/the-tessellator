@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::float::Float;
+use crate::float::{Float, Particle};
 use std::cmp::{max, min, Ordering};
 use std::vec::Vec;
 
@@ -190,9 +190,9 @@ impl<Real: Float> CeleryCellInfo<Real> {
 
 /// A 3-dimensional cell array, designed for quickly finding nearby points in order of distance.
 #[derive(Debug)]
-pub struct Celery<'a, Real: Float, PointType: ToCeleryPoint<Real> + Default + 'a> {
+pub struct Celery<Real: Float, PointType: Particle<Real>> {
     /// The points stored in the cell array.
-    pub points: &'a [PointType],
+    pub points: Vec<PointType>,
     /// The cell index of each point. The cell index corresponds to the point in `points` with the
     /// same index.
     pub cells: Vec<usize>,
@@ -226,14 +226,14 @@ pub struct Celery<'a, Real: Float, PointType: ToCeleryPoint<Real> + Default + 'a
     search_order: Vec<DistanceIndex<Real>>,
 }
 
-impl<'a, Real: Float, PointType: ToCeleryPoint<Real> + Default> Celery<'a, Real, PointType> {
-    /// Create a cell array from a slice of points.
-    pub fn new(pts: &'a [PointType]) -> Celery<Real, PointType> {
-        let bounds = CeleryBounds::new(pts);
-        let cell_info = CeleryCellInfo::new(pts, &bounds);
+impl<Real: Float, PointType: Particle<Real>> Celery<Real, PointType> {
+    /// Create a cell array from its points.
+    pub fn new(pts: Vec<PointType>) -> Celery<Real, PointType> {
+        let bounds = CeleryBounds::new(&pts);
+        let cell_info = CeleryCellInfo::new(&pts, &bounds);
 
-        let cells = Celery::get_cells(pts, &bounds, &cell_info);
-        let sorted_indices = Celery::get_sorted_indices(pts, &cells);
+        let cells = Celery::get_cells(&pts, &bounds, &cell_info);
+        let sorted_indices = Celery::get_sorted_indices(&pts, &cells);
         let delimiters =
             Celery::<Real, PointType>::get_delimiters(&cells, &sorted_indices, &cell_info);
         let search_order = Celery::<Real, PointType>::get_search_order(&cell_info);
@@ -247,6 +247,22 @@ impl<'a, Real: Float, PointType: ToCeleryPoint<Real> + Default> Celery<'a, Real,
             cell_info: cell_info,
             search_order: search_order,
         }
+    }
+
+    /// Reset the fields of the Celery struct when the points have changed.
+    pub fn reset(&mut self) {
+        // TODO Provide these with their own reset methods.
+        self.bounds = CeleryBounds::new(&self.points);
+        self.cell_info = CeleryCellInfo::new(&self.points, &self.bounds);
+
+        self.cells = Celery::get_cells(&self.points, &self.bounds, &self.cell_info);
+        self.sorted_indices = Celery::get_sorted_indices(&self.points, &self.cells);
+        self.delimiters = Celery::<Real, PointType>::get_delimiters(
+            &self.cells,
+            &self.sorted_indices,
+            &self.cell_info,
+        );
+        self.search_order = Celery::<Real, PointType>::get_search_order(&self.cell_info);
     }
 
     /// Get the x-index of the cell from an x-coordinate.
@@ -324,7 +340,7 @@ impl<'a, Real: Float, PointType: ToCeleryPoint<Real> + Default> Celery<'a, Real,
 
     /// Compute the cell that each individual point should be stored in.
     fn get_cells(
-        pts: &'a [PointType],
+        pts: &Vec<PointType>,
         bounds: &CeleryBounds<Real>,
         cell_info: &CeleryCellInfo<Real>,
     ) -> Vec<usize> {
@@ -338,7 +354,7 @@ impl<'a, Real: Float, PointType: ToCeleryPoint<Real> + Default> Celery<'a, Real,
     }
 
     /// Get a list of the index of each point ordered by cell location.
-    fn get_sorted_indices(pts: &'a [PointType], cells: &Vec<usize>) -> Vec<usize> {
+    fn get_sorted_indices(pts: &Vec<PointType>, cells: &Vec<usize>) -> Vec<usize> {
         let size = pts.len();
         let mut index_map = Vec::with_capacity(size);
 
@@ -776,9 +792,9 @@ impl<'a, Real: Float, PointType: ToCeleryPoint<Real> + Default> Celery<'a, Real,
 /// therefore not well-suited to concurrency. However, concurrent operations could be performed
 /// with separate expanding searches.
 #[derive(Debug)]
-pub struct ExpandingSearch<'b, 'a: 'b, Real: Float, PointType: ToCeleryPoint<Real> + Default + 'a> {
+pub struct ExpandingSearch<'a, Real: Float, PointType: Particle<Real>> {
     /// The cell array to search over.
-    celery: &'b Celery<'a, Real, PointType>,
+    celery: &'a Celery<Real, PointType>,
 
     /// The last search index that was searched.
     current_search_index: usize,
@@ -791,16 +807,14 @@ pub struct ExpandingSearch<'b, 'a: 'b, Real: Float, PointType: ToCeleryPoint<Rea
     z_cell_index: usize,
 }
 
-impl<'b, 'a: 'b, Real: Float, PointType: ToCeleryPoint<Real> + Default + 'a>
-    ExpandingSearch<'b, 'a, Real, PointType>
-{
+impl<'a, Real: Float, PointType: Particle<Real>> ExpandingSearch<'a, Real, PointType> {
     /// Create a new expanding search from a cell array and a point to search around.
     pub fn new(
-        celery: &'b Celery<'a, Real, PointType>,
+        celery: &Celery<Real, PointType>,
         x: Real,
         y: Real,
         z: Real,
-    ) -> ExpandingSearch<'b, 'a, Real, PointType> {
+    ) -> ExpandingSearch<Real, PointType> {
         let x_cell_index =
             Celery::<Real, PointType>::get_x_cell_index(x, &celery.bounds, &celery.cell_info);
         let y_cell_index =
@@ -808,7 +822,7 @@ impl<'b, 'a: 'b, Real: Float, PointType: ToCeleryPoint<Real> + Default + 'a>
         let z_cell_index =
             Celery::<Real, PointType>::get_z_cell_index(z, &celery.bounds, &celery.cell_info);
 
-        ExpandingSearch::<'b, 'a, Real, PointType> {
+        ExpandingSearch::<Real, PointType> {
             celery: celery,
             current_search_index: 0,
             x_cell_index: x_cell_index,
@@ -889,7 +903,7 @@ mod tests {
     use std::collections::HashSet;
     use std::iter::FromIterator;
 
-    #[derive(Debug, Default)]
+    #[derive(Clone, Debug, Default)]
     struct TestPoint(Float64, Float64, Float64);
 
     impl ToCeleryPoint<Float64> for TestPoint {
@@ -1023,13 +1037,13 @@ mod tests {
             TestPoint(Float64(0.3), Float64(1.7), Float64(9.0)),
         ];
 
-        Celery::new(&pts);
+        Celery::new(pts);
     }
 
     #[test]
     fn insert_one_point() {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1);
-        let celery = Celery::new(&pts);
+        let celery = Celery::new(pts);
 
         assert_eq!(celery.cell_info.cells_per_dimension, 1);
         assert_eq!(celery.search_order.len(), 1);
@@ -1042,7 +1056,7 @@ mod tests {
     #[test]
     fn insert_one_point_large() {
         let pts = generate_random_points(-1000.0, 500.0, -1000.0, 500.0, -1000.0, 500.0, 1);
-        let celery = Celery::new(&pts);
+        let celery = Celery::new(pts);
 
         assert_eq!(celery.cell_info.cells_per_dimension, 1);
         assert_eq!(celery.search_order.len(), 1);
@@ -1055,7 +1069,7 @@ mod tests {
     #[test]
     fn insert_one_point_oblong() {
         let pts = generate_random_points(-5.0, -4.0, 12.0, 1000.0, -10000.0, 1.0, 1);
-        let celery = Celery::new(&pts);
+        let celery = Celery::new(pts);
 
         assert_eq!(celery.cell_info.cells_per_dimension, 1);
         assert_eq!(celery.search_order.len(), 1);
@@ -1068,7 +1082,7 @@ mod tests {
     #[test]
     fn insert_one_thousand_points() {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1000);
-        let celery = Celery::new(&pts);
+        let celery = Celery::new(pts);
 
         assert_eq!(celery.cell_info.cells_per_dimension, 10);
         assert_eq!(celery.search_order.len(), 6859);
@@ -1081,7 +1095,7 @@ mod tests {
     #[test]
     fn insert_one_thousand_points_large() {
         let pts = generate_random_points(-1000.0, 500.0, -1000.0, 500.0, -1000.0, 500.0, 1000);
-        let celery = Celery::new(&pts);
+        let celery = Celery::new(pts);
 
         assert_eq!(celery.cell_info.cells_per_dimension, 10);
         assert_eq!(celery.search_order.len(), 6859);
@@ -1094,7 +1108,7 @@ mod tests {
     #[test]
     fn insert_one_thousand_points_oblong() {
         let pts = generate_random_points(-5.0, -4.0, 12.0, 1000.0, -10000.0, 1.0, 1000);
-        let celery = Celery::new(&pts);
+        let celery = Celery::new(pts);
 
         assert_eq!(celery.cell_info.cells_per_dimension, 10);
         assert_eq!(celery.search_order.len(), 6859);
@@ -1107,7 +1121,7 @@ mod tests {
     #[test]
     fn insert_one_million_points() {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1000000);
-        let celery = Celery::new(&pts);
+        let celery = Celery::new(pts);
 
         assert_eq!(celery.cell_info.cells_per_dimension, 93);
         assert_eq!(celery.search_order.len(), 6331625);
@@ -1120,7 +1134,7 @@ mod tests {
     #[test]
     fn insert_one_million_points_large() {
         let pts = generate_random_points(-1000.0, 500.0, -1000.0, 500.0, -1000.0, 500.0, 1000000);
-        let celery = Celery::new(&pts);
+        let celery = Celery::new(pts);
 
         assert_eq!(celery.cell_info.cells_per_dimension, 93);
         assert_eq!(celery.search_order.len(), 6331625);
@@ -1133,7 +1147,7 @@ mod tests {
     #[test]
     fn insert_one_million_points_oblong() {
         let pts = generate_random_points(-5.0, -4.0, 12.0, 1000.0, -10000.0, 1.0, 1000000);
-        let celery = Celery::new(&pts);
+        let celery = Celery::new(pts);
 
         assert_eq!(celery.cell_info.cells_per_dimension, 93);
         assert_eq!(celery.search_order.len(), 6331625);
@@ -1146,7 +1160,7 @@ mod tests {
     #[test]
     fn expanding_search_center() {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 100);
-        let celery = Celery::new(&pts);
+        let celery = Celery::new(pts);
         let mut expanding_search =
             ExpandingSearch::new(&celery, Float64(0.5), Float64(0.5), Float64(0.5));
 
@@ -1178,7 +1192,7 @@ mod tests {
     #[test]
     fn expanding_search_corner() {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 100);
-        let celery = Celery::new(&pts);
+        let celery = Celery::new(pts);
         let mut expanding_search =
             ExpandingSearch::new(&celery, Float64(0.0), Float64(0.0), Float64(0.0));
 
@@ -1210,7 +1224,7 @@ mod tests {
     #[test]
     fn expanding_search_all_at_once() {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 100);
-        let celery = Celery::new(&pts);
+        let celery = Celery::new(pts);
         let mut expanding_search =
             ExpandingSearch::new(&celery, Float64(0.0), Float64(0.0), Float64(0.0));
 
@@ -1230,7 +1244,7 @@ mod tests {
     #[test]
     fn expanding_search_more_than_all_at_once() {
         let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 100);
-        let celery = Celery::new(&pts);
+        let celery = Celery::new(pts);
         let mut expanding_search =
             ExpandingSearch::new(&celery, Float64(0.0), Float64(0.0), Float64(0.0));
 
