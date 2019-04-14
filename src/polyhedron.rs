@@ -250,6 +250,29 @@ impl<Real: Float> Polyhedron<Real> {
         }
     }
 
+    /// Reset the polyhedron to a cube
+    pub fn reset(
+        &mut self,
+        x_min: Real,
+        y_min: Real,
+        z_min: Real,
+        x_max: Real,
+        y_max: Real,
+        z_max: Real,
+    ) {
+        let (root_edge, vertices, faces, edges) =
+            Polyhedron::build_cube(x_min, y_min, z_min, x_max, y_max, z_max);
+
+        self.root_edge = root_edge;
+        self.vertices = vertices;
+        self.faces = faces;
+        self.edges = edges;
+        self.vertices_to_destroy.clear();
+        self.edges_to_destroy.clear();
+
+        // TODO deal with unused fields
+    }
+
     /// Construct the initial polyhedron as a cube.
     fn build_cube(
         x_min: Real,

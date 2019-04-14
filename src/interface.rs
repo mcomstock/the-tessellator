@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::celery::{Celery, ExpandingSearch};
+use crate::celery::{Celery, ExpandingSearch, ToCeleryPoint};
 use crate::float::{Float, Particle};
 use crate::polyhedron::Polyhedron;
 use crate::vector3::{BoundingBox, Vector3};
@@ -61,11 +61,22 @@ impl<Real: Float, PointType: Particle<Real>> Diagram<Real, PointType> {
         // Adding padding is probably not necessary, so it will not be done by default. A bounding
         // box with padding can be supplied if desired.
 
+        // Don't allow initializing multiple times.
         debug_assert!(!self.initialized);
 
         self.sort_particles();
 
-        // TODO if a container polyhedron is not given, we need to create one.
+        // If a container polyhedron is not given, we need to create one.
+        if self.container_shape.is_built() {
+            self.container_shape.reset(
+                self.bounding_box.low.get_x(),
+                self.bounding_box.low.get_y(),
+                self.bounding_box.low.get_z(),
+                self.bounding_box.high.get_x(),
+                self.bounding_box.high.get_y(),
+                self.bounding_box.high.get_z(),
+            );
+        }
 
         self.cell_array.reset();
 
