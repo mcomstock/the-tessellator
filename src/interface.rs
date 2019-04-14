@@ -14,14 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::celery::Celery;
+use crate::celery::{Celery, ExpandingSearch};
 use crate::float::{Float, Particle};
 use crate::polyhedron::Polyhedron;
 use crate::vector3::{BoundingBox, Vector3};
 
 /// Contains a vector of particle objects, a spatial data structure, and a polyhedron representing
 /// the container.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Diagram<Real: Float, PointType: Particle<Real>> {
     /// Whether or not the diagram has been readied for Voronoi computations.
     initialized: bool,
@@ -47,11 +47,6 @@ pub struct Diagram<Real: Float, PointType: Particle<Real>> {
 }
 
 impl<Real: Float, PointType: Particle<Real>> Diagram<Real, PointType> {
-    /// The number of particle objects in the diagram.
-    fn num_particles(&self) -> usize {
-        self.cell_array.points.len()
-    }
-
     /// Add a particle to the diagram with a specified group. This should only be done before the
     /// diagram is initialized.
     fn add_particle_with_group(&mut self, particle: PointType, group: usize) {
@@ -72,13 +67,15 @@ impl<Real: Float, PointType: Particle<Real>> Diagram<Real, PointType> {
 
         // TODO if a container polyhedron is not given, we need to create one.
 
+        self.cell_array.reset();
+
         self.initialized = true;
     }
 
     /// Sort the particles in Morton order. Morton order (or Z-order) is a method of sorting
     /// multi-dimensional data that preserves the locality of data points.
     fn sort_particles(&mut self) {
-        let len = self.num_particles();
+        let len = self.cell_array.points.len();
 
         // Use a dummy value for the resize, since it will get overwritten.
         self.internal_indices.resize(len, 0);
@@ -173,4 +170,23 @@ impl<Real: Float, PointType: Particle<Real>> Diagram<Real, PointType> {
 
         morton
     }
+}
+
+/// A Voronoi cell.
+#[derive(Debug)]
+struct Cell<'a, 'b, Real: Float, PointType: Particle<Real>> {
+    /// The diagram this cell belongs to.
+    diagram: &'a Diagram<Real, PointType>,
+    /// The index of the point in this cell in the diagram.
+    index: usize,
+    /// The position of the point in the cell.
+    position: Vector3<Real>,
+    /// The Polyhedron representing the Voronoi cell.
+    polyhedron: Option<Polyhedron<Real>>,
+    /// The search radius for neighbors of the particle in the cell.
+    radius: Real,
+    /// The target group of the cell.
+    target_group: usize,
+    /// The ExpandingSearch used for finding neighbors of the point in the cell.
+    expanding_search: ExpandingSearch<'b, Real, PointType>,
 }

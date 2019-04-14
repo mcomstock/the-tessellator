@@ -189,7 +189,7 @@ impl<Real: Float> CeleryCellInfo<Real> {
 }
 
 /// A 3-dimensional cell array, designed for quickly finding nearby points in order of distance.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Celery<Real: Float, PointType: Particle<Real>> {
     /// The points stored in the cell array.
     pub points: Vec<PointType>,

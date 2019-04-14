@@ -20,7 +20,7 @@ use crate::float::Float;
 use std::ops::{Add, Sub};
 
 /// A three-dimensional vector that implements a number of mathematical operations.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Vector3<Real: Float> {
     pub x: Real,
     pub y: Real,
@@ -35,7 +35,7 @@ impl<Real: Float> Vector3<Real> {
     }
 
     /// Get the result of scaling a vector.
-    pub fn scale(self, scalar: Real) -> Vector3<Real> {
+    pub fn scale(&self, scalar: Real) -> Vector3<Real> {
         Vector3 {
             x: self.x * scalar,
             y: self.y * scalar,
@@ -105,7 +105,7 @@ pub struct Plane<Real: Float> {
 }
 
 impl<Real: Float> Plane<Real> {
-    // TODO: This can be constexpr.
+    // TODO: This is constexpr in the C++ version
     /// Get the location of a point relative to the plane given the signed distance between the
     /// two (point - plane).
     fn location(signed_distance: Real, tolerance: Real) -> PlaneLocation {
@@ -211,11 +211,139 @@ impl<Real: Float> BoundingBox<Real> {
 
 #[cfg(test)]
 mod tests {
-    use super::Vector3;
+    use super::ToCeleryPoint;
+    use super::{BoundingBox, Plane, PlaneLocation, Vector3};
     use crate::float::Float64;
 
+    fn v(x: f64, y: f64, z: f64) -> Vector3<Float64> {
+        Vector3 {
+            x: Float64(x),
+            y: Float64(y),
+            z: Float64(z),
+        }
+    }
+
     #[test]
-    fn create_vector3() {
-        let _vector = Vector3::<Float64>::default();
+    fn dot_test() {
+        let v1 = v(1.0, 2.0, 3.0);
+        let v2 = v(4.0, 5.0, 6.0);
+
+        assert_eq!(Vector3::dot(&v1, &v2), Float64(32.0));
+        assert_eq!(Vector3::dot(&v2, &v1), Float64(32.0));
+    }
+
+    #[test]
+    fn scale_test() {
+        let v1 = v(1.0, -2.0, 0.0);
+
+        assert_eq!(v1.scale(Float64(1.0)), v(1.0, -2.0, 0.0));
+        assert_eq!(v1.scale(Float64(2.0)), v(2.0, -4.0, 0.0));
+        assert_eq!(v1.scale(Float64(-3.0)), v(-3.0, 6.0, 0.0));
+    }
+
+    #[test]
+    fn add_test() {
+        let v1 = v(-4.5, 0.0, 200.1);
+        let v2 = v(2.0, -3.4, 4.1);
+
+        assert_eq!(&v1 + &v2, v(-2.5, -3.4, 204.2));
+        assert_eq!(&v2 + &v1, v(-2.5, -3.4, 204.2));
+    }
+
+    #[test]
+    fn sub_test() {
+        let v1 = v(-4.5, 0.0, 200.1);
+        let v2 = v(2.0, -3.4, 4.1);
+
+        assert_eq!(&v1 - &v2, v(-6.5, 3.4, 196.0));
+        assert_eq!(&v2 - &v1, v(6.5, -3.4, -196.0));
+    }
+
+    #[test]
+    fn location_test() {
+        let tol = Float64(0.01);
+        let out_distance = Float64(1.0);
+        let in_distance = Float64(-1.0);
+        let within_tolerance = Float64(0.005);
+
+        assert_eq!(Plane::location(out_distance, tol), PlaneLocation::Outside);
+        assert_eq!(Plane::location(in_distance, tol), PlaneLocation::Inside);
+        assert_eq!(
+            Plane::location(within_tolerance, tol),
+            PlaneLocation::Incident
+        );
+    }
+
+    #[test]
+    fn vector_location_test() {
+        // Plane that lies on x=1.
+        let p = Plane {
+            unit_normal: v(1.0, 0.0, 0.0),
+            plane_offset: Float64(1.0),
+        };
+
+        let tol = Float64(0.05);
+
+        let outside = v(4.0, 2.0, -6.0);
+        let inside = v(-3.0, -3.0, -3.0);
+        let incident = v(1.0, -6.0, 0.0);
+
+        assert_eq!(p.vector_location(&outside, tol), PlaneLocation::Outside);
+        assert_eq!(p.vector_location(&inside, tol), PlaneLocation::Inside);
+        assert_eq!(p.vector_location(&incident, tol), PlaneLocation::Incident);
+    }
+
+    #[test]
+    fn intersection_test() {
+        // Plane that lies on x=1.
+        let p = Plane {
+            unit_normal: v(1.0, 0.0, 0.0),
+            plane_offset: Float64(1.0),
+        };
+
+        let v1 = v(20.0, 0.0, 0.0);
+        let v2 = v(10.0, 10.0, 0.0);
+
+        assert_eq!(p.intersection(&v1, &v2), v(1.0, 19.0, 0.0));
+    }
+
+    #[test]
+    fn adjust_to_contain_test() {
+        let mut b = BoundingBox {
+            low: v(0.0, 0.0, 0.0),
+            high: v(0.0, 0.0, 0.0),
+        };
+
+        let v1 = v(-1.0, 2.0, 0.0);
+        let v2 = v(-2.0, -3.0, 1.0);
+        let v3 = v(0.0, 0.0, 0.0);
+
+        b.adjust_to_contain(v1.get_x(), v1.get_y(), v1.get_z());
+
+        assert_eq!(b.low, v(-1.0, 0.0, 0.0));
+        assert_eq!(b.high, v(0.0, 2.0, 0.0));
+
+        b.adjust_to_contain(v2.get_x(), v2.get_y(), v2.get_z());
+
+        assert_eq!(b.low, v(-2.0, -3.0, 0.0));
+        assert_eq!(b.high, v(0.0, 2.0, 1.0));
+
+        b.adjust_to_contain(v3.get_x(), v3.get_y(), v3.get_z());
+
+        assert_eq!(b.low, v(-2.0, -3.0, 0.0));
+        assert_eq!(b.high, v(0.0, 2.0, 1.0));
+    }
+
+    #[test]
+    fn pad_test() {
+        let mut b = BoundingBox {
+            low: v(0.0, 0.0, 0.0),
+            high: v(0.0, 0.0, 0.0),
+        };
+
+        b.pad(Float64(0.5));
+
+        assert_eq!(b.low, v(-0.5, -0.5, -0.5));
+        assert_eq!(b.high, v(0.5, 0.5, 0.5));
     }
 }
