@@ -185,7 +185,7 @@ impl<Real: Float, PointType: Particle<Real>> Diagram<Real, PointType> {
 
 /// A Voronoi cell.
 #[derive(Debug)]
-struct Cell<'a, 'b, Real: Float, PointType: Particle<Real>> {
+struct Cell<'a, Real: Float, PointType: Particle<Real>> {
     /// The diagram this cell belongs to.
     diagram: &'a Diagram<Real, PointType>,
     /// The index of the point in this cell in the diagram.
@@ -194,10 +194,15 @@ struct Cell<'a, 'b, Real: Float, PointType: Particle<Real>> {
     position: Vector3<Real>,
     /// The Polyhedron representing the Voronoi cell.
     polyhedron: Option<Polyhedron<Real>>,
-    /// The search radius for neighbors of the particle in the cell.
-    radius: Real,
+    /// The search radius for neighbors of the particle in the cell. If this is not provided, an
+    /// expanding search will be used instead.
+    radius: Option<Real>,
     /// The target group of the cell.
     target_group: usize,
-    /// The ExpandingSearch used for finding neighbors of the point in the cell.
-    expanding_search: ExpandingSearch<'b, Real, PointType>,
+}
+
+impl<'a, Real: Float, PointType: Particle<Real>> Cell<'a, Real, PointType> {
+    /// Compute the Voronoi cell for a particle. Uses an expanding search strategy if a specific
+    /// search radius is not provided.
+    pub fn compute_voronoi_cell(&mut self) {}
 }

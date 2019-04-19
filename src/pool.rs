@@ -160,6 +160,19 @@ impl<T> Pool<T> {
             _ => self.data.len() - 1,
         }
     }
+
+    /// Get whether the there is an element at the index.
+    pub fn has(&self, index: usize) -> bool {
+        match &self.data[index] {
+            PoolChunk::Value(_) => true,
+            _ => false,
+        }
+    }
+
+    /// Get the length of the data stored in the Pool.
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
 }
 
 /// An iterator for a pool, which skips over any empty values.

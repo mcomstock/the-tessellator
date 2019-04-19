@@ -30,7 +30,6 @@ struct HalfEdge {
     /// The index of the next half-edge in the polyhedron face.
     next: Option<usize>,
 
-    // TODO: This might not need interior mutability to work.
     /// The vertex this half-edge belongs to.
     target: Option<usize>,
 
@@ -48,6 +47,7 @@ struct Face {
     starting_edge_index: usize,
 }
 
+// TODO: Think about making this an optional field on the Face itself.
 /// Contains a face and additional information about that face.
 #[derive(Debug, Default)]
 struct FaceData<Real: Float> {
@@ -211,11 +211,6 @@ pub struct Polyhedron<Real: Float> {
     /// The face data.
     face_data: Vec<FaceData<Real>>,
 
-    /// A list of vertices to be deleted.
-    vertices_to_destroy: Vec<usize>,
-    /// A list of edges do be deleted.
-    edges_to_destroy: Vec<usize>,
-
     /// The farthest vertex from the point.
     max_distance_vertex: Option<usize>,
 
@@ -267,8 +262,8 @@ impl<Real: Float> Polyhedron<Real> {
         self.vertices = vertices;
         self.faces = faces;
         self.edges = edges;
-        self.vertices_to_destroy.clear();
-        self.edges_to_destroy.clear();
+
+        self.face_data.clear();
 
         // TODO deal with unused fields
     }
@@ -768,6 +763,98 @@ impl<Real: Float> Polyhedron<Real> {
     /// Check if the polyhedron has been built yet.
     pub fn is_built(&self) -> bool {
         return self.root_edge.is_some();
+    }
+
+    /// Get the normal vector for a face.
+    ///
+    /// The algorithm used here is to take the first vertex of the face and set it as the anchor.
+    /// Then move along the vertices in the face until the first one is reached again. At each
+    /// vertex, get the vector between it and the anchor. Take the cross product of that vector and
+    /// the one for the previous vertex. Finally, add all of cross products to get the weighted
+    /// normal.
+    ///
+    /// What this is doing is getting the normal vector of each triangle that makes up the surface
+    /// (using a triangulation where all triangles share the anchor as a vertex) and adding them
+    /// together. This method is generally considered to be quite fast.
+    pub fn weighted_normal(&self, face_index: usize) -> Vector3<Real> {
+        let mut normal = Vector3::<Real> {
+            x: 0.into(),
+            y: 0.into(),
+            z: 0.into(),
+        };
+
+        // The target of the starting edge will serve as the anchor.
+        let starting_edge_index = self.faces.get_or_fail(face_index).starting_edge_index;
+        let starting_edge = self.edges.get_or_fail(starting_edge_index);
+        let target_vertex_index = starting_edge.target.unwrap();
+        let anchor = self.vertices.get_or_fail(target_vertex_index);
+
+        // Set the first "current vertex". Note that it must be TWO vertices after the anchor,
+        // since it is crossed with the previous one.
+        let mut current_edge_index = starting_edge.next.unwrap();
+        let mut current_edge = self.edges.get_or_fail(current_edge_index);
+        let mut current_vector = self.vertices.get_or_fail(current_edge.target.unwrap()) - anchor;
+        current_edge_index = current_edge.next.unwrap();
+        current_edge = self.edges.get_or_fail(current_edge_index);
+
+        while current_edge_index != starting_edge_index {
+            // TODO clone - this can probably be made more elegant in general
+            let previous_vector = current_vector.clone();
+            current_vector = self.vertices.get_or_fail(current_edge.target.unwrap()) - anchor;
+            normal = &normal + &Vector3::cross(&previous_vector, &current_vector);
+
+            current_edge_index = current_edge.next.unwrap();
+            current_edge = self.edges.get_or_fail(current_edge_index);
+        }
+
+        normal
+    }
+
+    /// Compute the face data for each face and save it. Does nothing if the face data already has
+    /// been computed.
+    fn compute_face_data(&mut self) {
+        if !self.face_data.is_empty() {
+            return;
+        }
+
+        for i in 0..self.faces.len() {
+            if self.faces.has(i) {
+                self.face_data.push(FaceData {
+                    face_index: i,
+                    weighted_normal: self.weighted_normal(i),
+                })
+            }
+        }
+    }
+
+    /// Compute the volume of the Polyhedron.
+    ///
+    /// The algorithm is a method derived from the divergence theorem, which is as follows:
+    /// 1. For each face, find an arbitrary point on the face and take its dot product with the
+    ///    unit normal vector leaving the face.
+    /// 2. Multiply the dot product by the area of the face.
+    /// 3. Sum the results for each face.
+    /// 4. Divide the total by 3.
+    ///
+    /// Since we compute the weighted normal by volume instead of the unit normal, steps 1 and 2
+    /// are combined into a single step.
+    fn compute_volume(&mut self) -> Real {
+        self.compute_face_data();
+
+        let mut volume = Real::from(0);
+
+        for fd in &self.face_data {
+            // Get the first vertex of the face.
+            let face = self.faces.get_or_fail(fd.face_index);
+            let starting_edge = self.edges.get_or_fail(face.starting_edge_index);
+            let target_vertex = self.vertices.get_or_fail(starting_edge.target.unwrap());
+
+            volume = volume + Vector3::dot(target_vertex, &fd.weighted_normal);
+        }
+
+        // TODO Why divide by 6 instead of 3? It's probably because the weighted normals are
+        // doubled.
+        volume / (6.into())
     }
 }
 

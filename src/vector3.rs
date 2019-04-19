@@ -34,6 +34,16 @@ impl<Real: Float> Vector3<Real> {
         a.x * b.x + a.y * b.y + a.z * b.z
     }
 
+    // TODO test
+    /// Get the cross product of two vectors.
+    pub fn cross(a: &Vector3<Real>, b: &Vector3<Real>) -> Vector3<Real> {
+        Vector3 {
+            x: a.y * b.z - a.z * b.y,
+            y: a.z * b.x - a.x * b.z,
+            z: a.x * b.y - a.y * b.x,
+        }
+    }
+
     /// Get the result of scaling a vector.
     pub fn scale(&self, scalar: Real) -> Vector3<Real> {
         Vector3 {
