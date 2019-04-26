@@ -156,7 +156,7 @@ impl<Real: Float> CeleryCellInfo<Real> {
     ) -> CeleryCellInfo<Real> {
         let num_points: Real = Real::from(pts.len());
 
-        // The number of cell "lenghts" that should span each dimension in the cell array. The
+        // The number of cell "lengths" that should span each dimension in the cell array. The
         // cast to `usize` rounds toward zero, so add 1 to round up.
         let cells_per_dimension: usize =
             (num_points / CeleryCellInfo::cell_density()).cbrt().into() + 1;
@@ -696,7 +696,14 @@ impl<Real: Float, PointType: Particle<Real>> Celery<Real, PointType> {
         }
     }
 
-    /// Check whether any part of a cell is within the specified radius of a given point.
+    /// Get the squared distance between two sets of coordinates.
+    fn distance_squared(x1: Real, y1: Real, z1: Real, x2: Real, y2: Real, z2: Real) -> Real {
+        (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2) + (z1 - z2) * (z1 - z2)
+    }
+
+    /// For any point, find its cell and check if another cell is within a certain radius of ANY
+    /// point in the original point's cell. In other words, determine whether the two cells are
+    /// within the distance given by the radius.
     // TODO: This could probably be refactored.
     fn check_cell_in_range(
         &self,
@@ -718,24 +725,24 @@ impl<Real: Float, PointType: Particle<Real>> Celery<Real, PointType> {
                 + sq(Real::from(k) * self.cell_info.z_cell_size)
         };
 
+        // This gets the "distance" along a single axis between two the cell indices. It counts
+        // two cells that are next to each other as having 0 distance.
         let offset = |coord: usize, index: usize| max(0, (coord as i32 - index as i32).abs() - 1);
 
-        distance_sq(
-            offset(
-                Celery::<Real, PointType>::get_x_cell_index(x, &self.bounds, &self.cell_info),
-                x_index,
-            ),
-            offset(
-                Celery::<Real, PointType>::get_y_cell_index(y, &self.bounds, &self.cell_info),
-                y_index,
-            ),
-            offset(
-                Celery::<Real, PointType>::get_z_cell_index(z, &self.bounds, &self.cell_info),
-                z_index,
-            ),
-        ) <= radius * radius
+        let xi = Celery::<Real, PointType>::get_x_cell_index(x, &self.bounds, &self.cell_info);
+        let yi = Celery::<Real, PointType>::get_y_cell_index(y, &self.bounds, &self.cell_info);
+        let zi = Celery::<Real, PointType>::get_z_cell_index(z, &self.bounds, &self.cell_info);
+
+        let x_offset = offset(xi, x_index);
+        let y_offset = offset(yi, y_index);
+        let z_offset = offset(zi, z_index);
+
+        let ds = distance_sq(x_offset, y_offset, z_offset);
+
+        ds <= radius * radius
     }
 
+    // TODO test
     /// Given 3-D coordinates and a radius, finds all cells within the radius of the coordinates.
     /// Returns a vector of indices to those cells.
     pub fn find_cells_in_radius(&self, x: Real, y: Real, z: Real, radius: Real) -> Vec<usize> {
@@ -782,6 +789,65 @@ impl<Real: Float, PointType: Particle<Real>> Celery<Real, PointType> {
         }
 
         cell_indices
+    }
+
+    // TODO test
+    // TODO might be faster to just copy find_cells_in_radius code to remove a loop
+    /// Given 3-D coordinates and a radius, find all the points in a cell within the radius of the
+    /// coordinates. Returns an array of references to the points.
+    pub fn find_neighbors_in_cell_radius(
+        &self,
+        x: Real,
+        y: Real,
+        z: Real,
+        radius: Real,
+    ) -> Vec<&PointType> {
+        let cell_indices = self.find_cells_in_radius(x, y, z, radius);
+
+        let mut neighbors = Vec::<&PointType>::new();
+        for cell_index in cell_indices {
+            for i in self.delimiters[cell_index]..self.delimiters[cell_index + 1] {
+                neighbors.push(&self.points[self.sorted_indices[i]])
+            }
+        }
+
+        neighbors
+    }
+
+    // TODO test
+    // TODO copy code here too maybe
+    /// Given 3-D coordinates and a radius, find all the points within the radius of the
+    /// coordinates. Note that this is slower than the search that only limits the radius to the
+    /// cell, but more precise. Returns an array of references to the points.
+    pub fn find_neighbors_in_real_radius(
+        &self,
+        x: Real,
+        y: Real,
+        z: Real,
+        radius: Real,
+    ) -> Vec<&PointType> {
+        let cell_indices = self.find_cells_in_radius(x, y, z, radius);
+
+        let mut neighbors = Vec::<&PointType>::new();
+        for cell_index in cell_indices {
+            for i in self.delimiters[cell_index]..self.delimiters[cell_index + 1] {
+                let point = &self.points[self.sorted_indices[i]];
+                let dist_sq = Celery::<Real, PointType>::distance_squared(
+                    x,
+                    y,
+                    z,
+                    point.get_x(),
+                    point.get_y(),
+                    point.get_z(),
+                );
+
+                if dist_sq <= radius * radius {
+                    neighbors.push(point);
+                }
+            }
+        }
+
+        neighbors
     }
 }
 
@@ -1259,5 +1325,180 @@ mod tests {
         let search_results = expanding_search.expand(Float64(10.0), 1000);
 
         assert_eq!(search_results.len(), 100);
+    }
+
+    #[test]
+    fn check_cell_in_range_test() {
+        // Create a cell array with 4 cells in each dimension. This value will need to change if the
+        // cell density ever changes.
+        let total_points = 79;
+
+        // Ensure that the celery is 4x4 so we know the bounds are at whole numbers.
+        let big_pt = TestPoint(2.0.into(), 2.0.into(), 2.0.into());
+        let little_pt = TestPoint((-2.0).into(), (-2.0).into(), (-2.0).into());
+        let mut pts = generate_random_points(-2.0, 2.0, -2.0, 2.0, -2.0, 2.0, total_points - 2);
+        pts.push(big_pt);
+        pts.push(little_pt);
+
+        let celery = Celery::new(pts);
+
+        for i in 0..4 {
+            for j in 0..4 {
+                for k in 0..4 {
+                    // For any point in the cell (2, 2, 2), any other cell that doesn't have 0 for
+                    // one of its indices should have 0 distance. For example, its corner touches
+                    // (3, 3, 3) so the cell distance is considered 0.
+                    if i != 0 && j != 0 && k != 0 {
+                        assert!(celery.check_cell_in_range(
+                            0.1.into(),
+                            0.1.into(),
+                            0.1.into(),
+                            0.5.into(),
+                            i,
+                            j,
+                            k
+                        ));
+
+                        assert!(celery.check_cell_in_range(
+                            0.9.into(),
+                            0.9.into(),
+                            0.9.into(),
+                            0.5.into(),
+                            i,
+                            j,
+                            k
+                        ));
+                    } else {
+                        assert!(!celery.check_cell_in_range(
+                            0.1.into(),
+                            0.1.into(),
+                            0.1.into(),
+                            0.5.into(),
+                            i,
+                            j,
+                            k
+                        ));
+
+                        assert!(!celery.check_cell_in_range(
+                            0.9.into(),
+                            0.9.into(),
+                            0.9.into(),
+                            0.5.into(),
+                            i,
+                            j,
+                            k
+                        ));
+                    }
+
+                    if (i == 0 && j >= 1 && k >= 1)
+                        || (i >= 1 && j == 0 && k >= 1)
+                        || (i >= 1 && j >= 1 && k == 0)
+                        || (i >= 1 && j >= 1 && k >= 1)
+                    {
+                        assert!(celery.check_cell_in_range(
+                            0.1.into(),
+                            0.1.into(),
+                            0.1.into(),
+                            1.1.into(),
+                            i,
+                            j,
+                            k
+                        ));
+
+                        assert!(celery.check_cell_in_range(
+                            0.9.into(),
+                            0.9.into(),
+                            0.9.into(),
+                            1.1.into(),
+                            i,
+                            j,
+                            k
+                        ));
+                    } else {
+                        assert!(!celery.check_cell_in_range(
+                            0.1.into(),
+                            0.1.into(),
+                            0.1.into(),
+                            1.1.into(),
+                            i,
+                            j,
+                            k
+                        ));
+
+                        assert!(!celery.check_cell_in_range(
+                            0.9.into(),
+                            0.9.into(),
+                            0.9.into(),
+                            1.1.into(),
+                            i,
+                            j,
+                            k
+                        ));
+                    }
+
+                    if i + j + k > 0 {
+                        assert!(celery.check_cell_in_range(
+                            0.1.into(),
+                            0.1.into(),
+                            0.1.into(),
+                            1.7.into(),
+                            i,
+                            j,
+                            k
+                        ));
+
+                        assert!(celery.check_cell_in_range(
+                            0.9.into(),
+                            0.9.into(),
+                            0.9.into(),
+                            1.7.into(),
+                            i,
+                            j,
+                            k
+                        ));
+                    } else {
+                        assert!(!celery.check_cell_in_range(
+                            0.1.into(),
+                            0.1.into(),
+                            0.1.into(),
+                            1.7.into(),
+                            i,
+                            j,
+                            k
+                        ));
+
+                        assert!(!celery.check_cell_in_range(
+                            0.9.into(),
+                            0.9.into(),
+                            0.9.into(),
+                            1.7.into(),
+                            i,
+                            j,
+                            k
+                        ));
+                    }
+
+                    assert!(celery.check_cell_in_range(
+                        0.1.into(),
+                        0.1.into(),
+                        0.1.into(),
+                        1.8.into(),
+                        i,
+                        j,
+                        k
+                    ));
+
+                    assert!(celery.check_cell_in_range(
+                        0.9.into(),
+                        0.9.into(),
+                        0.9.into(),
+                        1.8.into(),
+                        i,
+                        j,
+                        k
+                    ));
+                }
+            }
+        }
     }
 }

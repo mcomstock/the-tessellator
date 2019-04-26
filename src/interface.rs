@@ -196,7 +196,7 @@ struct Cell<'a, Real: Float, PointType: Particle<Real>> {
     polyhedron: Option<Polyhedron<Real>>,
     /// The search radius for neighbors of the particle in the cell. If this is not provided, an
     /// expanding search will be used instead.
-    radius: Option<Real>,
+    search_radius: Option<Real>,
     /// The target group of the cell.
     target_group: usize,
 }
@@ -204,5 +204,18 @@ struct Cell<'a, Real: Float, PointType: Particle<Real>> {
 impl<'a, Real: Float, PointType: Particle<Real>> Cell<'a, Real, PointType> {
     /// Compute the Voronoi cell for a particle. Uses an expanding search strategy if a specific
     /// search radius is not provided.
-    pub fn compute_voronoi_cell(&mut self) {}
+    pub fn compute_voronoi_cell(&mut self) {
+        // let polyhedron = self.polyhedron.unwrap();
+        // debug_assert!(!polyhedron.is_built());
+
+        // TODO maybe copy and translate the polyhedron.
+
+        match self.search_radius {
+            Some(radius) => {
+                let search_points = Vec::<usize>::new();
+            }
+            None => {
+            }
+        }
+    }
 }
