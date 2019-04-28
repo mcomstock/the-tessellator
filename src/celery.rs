@@ -742,17 +742,22 @@ impl<Real: Float, PointType: Particle<Real>> Celery<Real, PointType> {
         ds <= radius * radius
     }
 
-    // TODO test
     /// Given 3-D coordinates and a radius, finds all cells within the radius of the coordinates.
     /// Returns a vector of indices to those cells.
+    ///
+    /// Note that this method is an interesting mixture of the cell range check and an actual
+    /// distance check. The initial step is to refine the cells we search over into a square of
+    /// potential cells, where the bounds of the square are determined by the distance of the cell
+    /// from the actual point. From there, the valid cells are selected using the cell distance, so
+    /// the algorithm is slightly generous in its inclusion.
     pub fn find_cells_in_radius(&self, x: Real, y: Real, z: Real, radius: Real) -> Vec<usize> {
         let x_low = Celery::<Real, PointType>::max_float(x - radius, self.bounds.x_min);
         let y_low = Celery::<Real, PointType>::max_float(y - radius, self.bounds.y_min);
         let z_low = Celery::<Real, PointType>::max_float(z - radius, self.bounds.z_min);
 
-        let x_high = Celery::<Real, PointType>::min_float(x - radius, self.bounds.x_max);
-        let y_high = Celery::<Real, PointType>::min_float(y - radius, self.bounds.y_max);
-        let z_high = Celery::<Real, PointType>::min_float(z - radius, self.bounds.z_max);
+        let x_high = Celery::<Real, PointType>::min_float(x + radius, self.bounds.x_max);
+        let y_high = Celery::<Real, PointType>::min_float(y + radius, self.bounds.y_max);
+        let z_high = Celery::<Real, PointType>::min_float(z + radius, self.bounds.z_max);
 
         let x_min_index =
             Celery::<Real, PointType>::get_x_cell_index(x_low, &self.bounds, &self.cell_info);
@@ -1497,6 +1502,97 @@ mod tests {
                         j,
                         k
                     ));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn find_cells_in_radius_test() {
+        // Create a cell array with 4 cells in each dimension. This value will need to change if the
+        // cell density ever changes.
+        let total_points = 79;
+
+        // Ensure that the celery is 4x4 so we know the bounds are at whole numbers.
+        let big_pt = TestPoint(2.0.into(), 2.0.into(), 2.0.into());
+        let little_pt = TestPoint((-2.0).into(), (-2.0).into(), (-2.0).into());
+        let mut pts = generate_random_points(-2.0, 2.0, -2.0, 2.0, -2.0, 2.0, total_points - 2);
+        pts.push(big_pt);
+        pts.push(little_pt);
+
+        let celery = Celery::new(pts);
+
+        let get_cell_index = |i: usize, j: usize, k: usize| 4 * 4 * i + 4 * j + k;
+
+        let close_cells_1 =
+            celery.find_cells_in_radius(0.1.into(), 0.1.into(), 0.1.into(), 0.5.into());
+        let close_cells_2 =
+            celery.find_cells_in_radius(0.9.into(), 0.9.into(), 0.9.into(), 0.5.into());
+        let medium_cells_1 =
+            celery.find_cells_in_radius(0.1.into(), 0.1.into(), 0.1.into(), 1.2.into());
+        let medium_cells_2 =
+            celery.find_cells_in_radius(0.9.into(), 0.9.into(), 0.9.into(), 1.2.into());
+        let far_cells_1 =
+            celery.find_cells_in_radius(0.1.into(), 0.1.into(), 0.1.into(), 1.7.into());
+        let far_cells_2 =
+            celery.find_cells_in_radius(0.9.into(), 0.9.into(), 0.9.into(), 1.7.into());
+        let all_cells_1 =
+            celery.find_cells_in_radius(0.1.into(), 0.1.into(), 0.1.into(), 1.8.into());
+        let all_cells_2 =
+            celery.find_cells_in_radius(0.9.into(), 0.9.into(), 0.9.into(), 1.8.into());
+
+        for i in 0..4 {
+            for j in 0..4 {
+                for k in 0..4 {
+                    let cell_index = get_cell_index(i, j, k);
+
+                    if (i == 1 || i == 2) && (j == 1 || j == 2) && (k == 1 || k == 2) {
+                        assert!(close_cells_1.contains(&cell_index));
+                    } else {
+                        assert!(!close_cells_1.contains(&cell_index));
+                    }
+
+                    if (i == 2 || i == 3) && (j == 2 || j == 3) && (k == 2 || k == 3) {
+                        assert!(close_cells_2.contains(&cell_index));
+                    } else {
+                        assert!(!close_cells_2.contains(&cell_index));
+                    }
+
+                    // Note that, from here on, the "2" versions are simply the same as the "1"
+                    // versions, except that the cells with a 0 index in any dimension are filtered
+                    // out because they are not in the initial "square" range of the point itself.
+
+                    if (i == 0 && j >= 1 && k >= 1)
+                        || (i >= 1 && j == 0 && k >= 1)
+                        || (i >= 1 && j >= 1 && k == 0)
+                        || (i >= 1 && j >= 1 && k >= 1)
+                    {
+                        assert!(medium_cells_1.contains(&cell_index));
+                    } else {
+                        assert!(!medium_cells_1.contains(&cell_index));
+                    }
+
+                    if i >= 1 && j >= 1 && k >= 1 {
+                        assert!(medium_cells_2.contains(&cell_index));
+                    } else {
+                        assert!(!medium_cells_2.contains(&cell_index));
+                    }
+
+                    if i + j + k > 0 {
+                        assert!(far_cells_1.contains(&cell_index));
+                    } else {
+                        assert!(!far_cells_1.contains(&cell_index));
+                    }
+
+                    if i != 0 && j != 0 && k != 0 {
+                        assert!(far_cells_2.contains(&cell_index));
+                        assert!(all_cells_2.contains(&cell_index));
+                    } else {
+                        assert!(!far_cells_2.contains(&cell_index));
+                        assert!(!all_cells_2.contains(&cell_index));
+                    }
+
+                    assert!(all_cells_1.contains(&cell_index));
                 }
             }
         }
