@@ -974,7 +974,7 @@ mod tests {
     use std::collections::HashSet;
     use std::iter::FromIterator;
 
-    #[derive(Clone, Debug, Default)]
+    #[derive(PartialEq, Clone, Debug, Default)]
     struct TestPoint(Float64, Float64, Float64);
 
     impl ToCeleryPoint<Float64> for TestPoint {
@@ -1596,5 +1596,153 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn find_neighbors_in_cell_radius_test() {
+        // Create a cell array with 4 cells in each dimension. This value will need to change if the
+        // cell density ever changes.
+        let total_points = 79;
+
+        let same_cell = TestPoint(0.1.into(), 0.1.into(), 0.1.into());
+
+        let in_radius_low = TestPoint((-0.3).into(), (-0.3).into(), (-0.3).into());
+        let in_cell_low = TestPoint((-0.7).into(), (-0.7).into(), (-0.7).into());
+        let out_low = TestPoint((-1.1).into(), (-1.1).into(), (-1.1).into());
+
+        let in_radius_high = TestPoint(1.3.into(), 1.3.into(), 1.3.into());
+        let in_cell_high = TestPoint(1.7.into(), 1.7.into(), 1.7.into());
+
+        // Ensure that the celery is 4x4 so we know the bounds are at whole numbers.
+        let big_pt = TestPoint(2.0.into(), 2.0.into(), 2.0.into());
+        let little_pt = TestPoint((-2.0).into(), (-2.0).into(), (-2.0).into());
+        let mut pts = generate_random_points(-2.0, 2.0, -2.0, 2.0, -2.0, 2.0, total_points - 8);
+
+        pts.push(big_pt);
+        pts.push(little_pt);
+        pts.push(same_cell.clone());
+        pts.push(in_radius_low.clone());
+        pts.push(in_cell_low.clone());
+        pts.push(out_low.clone());
+        pts.push(in_radius_high.clone());
+        pts.push(in_cell_high.clone());
+
+        let celery = Celery::new(pts);
+
+        let neighbors =
+            celery.find_neighbors_in_cell_radius(0.5.into(), 0.5.into(), 0.5.into(), 1.73.into());
+
+        let mut same_cell_found = 0;
+        let mut in_radius_low_found = 0;
+        let mut in_cell_low_found = 0;
+        let mut out_low_found = 0;
+        let mut in_radius_high_found = 0;
+        let mut in_cell_high_found = 0;
+        for n in neighbors {
+            if n.clone() == same_cell {
+                same_cell_found += 1;
+            }
+
+            if n.clone() == in_radius_low {
+                in_radius_low_found += 1;
+            }
+
+            if n.clone() == in_cell_low {
+                in_cell_low_found += 1;
+            }
+
+            if n.clone() == out_low {
+                out_low_found += 1;
+            }
+
+            if n.clone() == in_radius_high {
+                in_radius_high_found += 1;
+            }
+
+            if n.clone() == in_cell_high {
+                in_cell_high_found += 1;
+            }
+        }
+
+        assert_eq!(same_cell_found, 1);
+        assert_eq!(in_radius_low_found, 1);
+        assert_eq!(in_cell_low_found, 1);
+        assert_eq!(out_low_found, 0);
+        assert_eq!(in_radius_high_found, 1);
+        assert_eq!(in_cell_high_found, 1);
+    }
+
+    #[test]
+    fn find_neighbors_in_real_radius_test() {
+        // Create a cell array with 4 cells in each dimension. This value will need to change if the
+        // cell density ever changes.
+        let total_points = 79;
+
+        let same_cell = TestPoint(0.1.into(), 0.1.into(), 0.1.into());
+
+        let in_radius_low = TestPoint((-0.1).into(), (-0.1).into(), (-0.1).into());
+        let in_cell_low = TestPoint((-0.7).into(), (-0.7).into(), (-0.7).into());
+        let out_low = TestPoint((-1.1).into(), (-1.1).into(), (-1.1).into());
+
+        let in_radius_high = TestPoint(1.3.into(), 1.3.into(), 1.3.into());
+        let in_cell_high = TestPoint(1.7.into(), 1.7.into(), 1.7.into());
+
+        // Ensure that the celery is 4x4 so we know the bounds are at whole numbers.
+        let big_pt = TestPoint(2.0.into(), 2.0.into(), 2.0.into());
+        let little_pt = TestPoint((-2.0).into(), (-2.0).into(), (-2.0).into());
+        let mut pts = generate_random_points(-2.0, 2.0, -2.0, 2.0, -2.0, 2.0, total_points - 8);
+
+        pts.push(big_pt);
+        pts.push(little_pt);
+        pts.push(same_cell.clone());
+        pts.push(in_radius_low.clone());
+        pts.push(in_cell_low.clone());
+        pts.push(out_low.clone());
+        pts.push(in_radius_high.clone());
+        pts.push(in_cell_high.clone());
+
+        let celery = Celery::new(pts);
+
+        let neighbors =
+            celery.find_neighbors_in_real_radius(0.5.into(), 0.5.into(), 0.5.into(), 1.73.into());
+
+        let mut same_cell_found = 0;
+        let mut in_radius_low_found = 0;
+        let mut in_cell_low_found = 0;
+        let mut out_low_found = 0;
+        let mut in_radius_high_found = 0;
+        let mut in_cell_high_found = 0;
+        for n in neighbors {
+            if n.clone() == same_cell {
+                same_cell_found += 1;
+            }
+
+            if n.clone() == in_radius_low {
+                in_radius_low_found += 1;
+            }
+
+            if n.clone() == in_cell_low {
+                in_cell_low_found += 1;
+            }
+
+            if n.clone() == out_low {
+                out_low_found += 1;
+            }
+
+            if n.clone() == in_radius_high {
+                in_radius_high_found += 1;
+            }
+
+            if n.clone() == in_cell_high {
+                in_cell_high_found += 1;
+            }
+        }
+
+        assert_eq!(same_cell_found, 1);
+        assert_eq!(in_radius_low_found, 1);
+        assert_eq!(in_cell_low_found, 0);
+        assert_eq!(out_low_found, 0);
+        assert_eq!(in_radius_high_found, 1);
+        assert_eq!(in_cell_high_found, 0);
     }
 }
