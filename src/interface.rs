@@ -193,29 +193,46 @@ struct Cell<'a, Real: Float, PointType: Particle<Real>> {
     /// The position of the point in the cell.
     position: Vector3<Real>,
     /// The Polyhedron representing the Voronoi cell.
-    polyhedron: Option<Polyhedron<Real>>,
+    polyhedron: Polyhedron<Real>,
     /// The search radius for neighbors of the particle in the cell. If this is not provided, an
     /// expanding search will be used instead.
     search_radius: Option<Real>,
     /// The target group of the cell.
-    target_group: usize,
+    target_group: Option<usize>,
 }
 
 impl<'a, Real: Float, PointType: Particle<Real>> Cell<'a, Real, PointType> {
     /// Compute the Voronoi cell for a particle. Uses an expanding search strategy if a specific
     /// search radius is not provided.
     pub fn compute_voronoi_cell(&mut self) {
-        // let polyhedron = self.polyhedron.unwrap();
-        // debug_assert!(!polyhedron.is_built());
+        let polyhedron = &self.polyhedron;
+        debug_assert!(!polyhedron.is_built());
 
         // TODO maybe copy and translate the polyhedron.
 
         match self.search_radius {
             Some(radius) => {
-                let search_points = Vec::<usize>::new();
+                // Or real radius?
+                let search_points = self.diagram.cell_array.find_neighbors_in_cell_radius(
+                    self.position.x,
+                    self.position.y,
+                    self.position.z,
+                    radius,
+                );
+
+                match self.target_group {
+                    Some(target) => {}
+                    None => {
+                        for search_point in search_points {
+                            // TODO we need to make sure that the point at the center of the
+                            // polyhedron is not used for cutting, if such a point exists. It might
+                            // be best to use the indexes instead of a reference to the point itself
+                            // to make that easier, which is what the C++ version does.
+                        }
+                    }
+                }
             }
-            None => {
-            }
+            None => {}
         }
     }
 }

@@ -796,47 +796,46 @@ impl<Real: Float, PointType: Particle<Real>> Celery<Real, PointType> {
         cell_indices
     }
 
-    // TODO test
     // TODO might be faster to just copy find_cells_in_radius code to remove a loop
     /// Given 3-D coordinates and a radius, find all the points in a cell within the radius of the
-    /// coordinates. Returns an array of references to the points.
+    /// coordinates. Returns an array of indices into the points array.
     pub fn find_neighbors_in_cell_radius(
         &self,
         x: Real,
         y: Real,
         z: Real,
         radius: Real,
-    ) -> Vec<&PointType> {
+    ) -> Vec<usize> {
         let cell_indices = self.find_cells_in_radius(x, y, z, radius);
 
-        let mut neighbors = Vec::<&PointType>::new();
+        let mut neighbors = Vec::<usize>::new();
         for cell_index in cell_indices {
             for i in self.delimiters[cell_index]..self.delimiters[cell_index + 1] {
-                neighbors.push(&self.points[self.sorted_indices[i]])
+                neighbors.push(self.sorted_indices[i])
             }
         }
 
         neighbors
     }
 
-    // TODO test
     // TODO copy code here too maybe
     /// Given 3-D coordinates and a radius, find all the points within the radius of the
     /// coordinates. Note that this is slower than the search that only limits the radius to the
-    /// cell, but more precise. Returns an array of references to the points.
+    /// cell, but more precise. Returns an array of indices into the points array.
     pub fn find_neighbors_in_real_radius(
         &self,
         x: Real,
         y: Real,
         z: Real,
         radius: Real,
-    ) -> Vec<&PointType> {
+    ) -> Vec<usize> {
         let cell_indices = self.find_cells_in_radius(x, y, z, radius);
 
-        let mut neighbors = Vec::<&PointType>::new();
+        let mut neighbors = Vec::<usize>::new();
         for cell_index in cell_indices {
             for i in self.delimiters[cell_index]..self.delimiters[cell_index + 1] {
-                let point = &self.points[self.sorted_indices[i]];
+                let point_index = self.sorted_indices[i];
+                let point = &self.points[point_index];
                 let dist_sq = Celery::<Real, PointType>::distance_squared(
                     x,
                     y,
@@ -847,7 +846,7 @@ impl<Real: Float, PointType: Particle<Real>> Celery<Real, PointType> {
                 );
 
                 if dist_sq <= radius * radius {
-                    neighbors.push(point);
+                    neighbors.push(point_index);
                 }
             }
         }
@@ -1620,12 +1619,12 @@ mod tests {
 
         pts.push(big_pt);
         pts.push(little_pt);
-        pts.push(same_cell.clone());
-        pts.push(in_radius_low.clone());
-        pts.push(in_cell_low.clone());
-        pts.push(out_low.clone());
-        pts.push(in_radius_high.clone());
-        pts.push(in_cell_high.clone());
+        pts.push(same_cell.clone()); // index 73
+        pts.push(in_radius_low.clone()); // index 74
+        pts.push(in_cell_low.clone()); // index 75
+        pts.push(out_low.clone()); // index 76
+        pts.push(in_radius_high.clone()); // index 77
+        pts.push(in_cell_high.clone()); // index 78
 
         let celery = Celery::new(pts);
 
@@ -1639,27 +1638,27 @@ mod tests {
         let mut in_radius_high_found = 0;
         let mut in_cell_high_found = 0;
         for n in neighbors {
-            if n.clone() == same_cell {
+            if n == 73 {
                 same_cell_found += 1;
             }
 
-            if n.clone() == in_radius_low {
+            if n == 74 {
                 in_radius_low_found += 1;
             }
 
-            if n.clone() == in_cell_low {
+            if n == 75 {
                 in_cell_low_found += 1;
             }
 
-            if n.clone() == out_low {
+            if n == 76 {
                 out_low_found += 1;
             }
 
-            if n.clone() == in_radius_high {
+            if n == 77 {
                 in_radius_high_found += 1;
             }
 
-            if n.clone() == in_cell_high {
+            if n == 78 {
                 in_cell_high_found += 1;
             }
         }
@@ -1694,12 +1693,12 @@ mod tests {
 
         pts.push(big_pt);
         pts.push(little_pt);
-        pts.push(same_cell.clone());
-        pts.push(in_radius_low.clone());
-        pts.push(in_cell_low.clone());
-        pts.push(out_low.clone());
-        pts.push(in_radius_high.clone());
-        pts.push(in_cell_high.clone());
+        pts.push(same_cell.clone()); // index 73
+        pts.push(in_radius_low.clone()); // index 74
+        pts.push(in_cell_low.clone()); // index 75
+        pts.push(out_low.clone()); // index 76
+        pts.push(in_radius_high.clone()); // index 77
+        pts.push(in_cell_high.clone()); // index 78
 
         let celery = Celery::new(pts);
 
@@ -1713,27 +1712,27 @@ mod tests {
         let mut in_radius_high_found = 0;
         let mut in_cell_high_found = 0;
         for n in neighbors {
-            if n.clone() == same_cell {
+            if n == 73 {
                 same_cell_found += 1;
             }
 
-            if n.clone() == in_radius_low {
+            if n == 74 {
                 in_radius_low_found += 1;
             }
 
-            if n.clone() == in_cell_low {
+            if n == 75 {
                 in_cell_low_found += 1;
             }
 
-            if n.clone() == out_low {
+            if n == 76 {
                 out_low_found += 1;
             }
 
-            if n.clone() == in_radius_high {
+            if n == 77 {
                 in_radius_high_found += 1;
             }
 
-            if n.clone() == in_cell_high {
+            if n == 78 {
                 in_cell_high_found += 1;
             }
         }

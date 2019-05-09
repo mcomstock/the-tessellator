@@ -445,7 +445,7 @@ impl<Real: Float> Polyhedron<Real> {
     }
 
     /// Cut the face of the polyhedron with the given plane.
-    fn cut_with_plane(&mut self, face_to_cut_index: usize, plane: &Plane<Real>) -> bool {
+    pub fn cut_with_plane(&mut self, point_index: usize, plane: &Plane<Real>) -> bool {
         // TODO check validity for debug?
 
         let first_outgoing_edge_index = match self.find_outgoing_edge(plane) {
@@ -488,8 +488,7 @@ impl<Real: Float> Polyhedron<Real> {
         });
 
         let actual_face_index = self.faces.add(Face {
-            // TODO this doesn't seem right
-            point_index: Some(face_to_cut_index),
+            point_index: Some(point_index),
             starting_edge_index: first_outside_face_edge_index,
         });
 
