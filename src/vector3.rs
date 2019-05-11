@@ -29,13 +29,13 @@ pub struct Vector3<Real: Float> {
 
 impl<Real: Float> Vector3<Real> {
     // TODO constexpr
-    /// Get the dot product of two vectors.
+    /// The dot product of two vectors.
     pub fn dot(a: &Vector3<Real>, b: &Vector3<Real>) -> Real {
         a.x * b.x + a.y * b.y + a.z * b.z
     }
 
     // TODO test
-    /// Get the cross product of two vectors.
+    /// The cross product of two vectors.
     pub fn cross(a: &Vector3<Real>, b: &Vector3<Real>) -> Vector3<Real> {
         Vector3 {
             x: a.y * b.z - a.z * b.y,
@@ -44,13 +44,45 @@ impl<Real: Float> Vector3<Real> {
         }
     }
 
-    /// Get the result of scaling a vector.
+    /// The result of scaling a vector.
     pub fn scale(&self, scalar: Real) -> Vector3<Real> {
         Vector3 {
             x: self.x * scalar,
             y: self.y * scalar,
             z: self.z * scalar,
         }
+    }
+
+    // TODO test, constexpr
+    /// The squared magnitude of a vector.
+    pub fn mag_sq(&self) -> Real {
+        Vector3::dot(self, self)
+    }
+
+    // TODO test
+    /// The magnitude of a vector.
+    pub fn mag(&self) -> Real {
+        self.mag_sq().sqrt()
+    }
+
+    // TODO test
+    /// The unit vector in the direction of the vector.
+    pub fn unit(&self) -> Vector3<Real> {
+        self.scale(Real::from(1.0) / self.mag())
+    }
+
+    // TODO test, constexpr
+    /// The midpoint between two vectors.
+    pub fn midpoint(a: &Vector3<Real>, b: &Vector3<Real>) -> Vector3<Real> {
+        (a + b).scale(Real::from(0.5))
+    }
+
+    // TODO test
+    /// Transform this vector by adding another vector.
+    pub fn add(&mut self, v: &Vector3<Real>) {
+        self.x = self.x + v.x;
+        self.y = self.y + v.y;
+        self.z = self.z + v.z;
     }
 }
 
@@ -167,6 +199,26 @@ impl<Real: Float> Plane<Real> {
 
         // TODO: Make sure that this is the best way to calculate the intersection.
         return a + &(b - a).scale((self.plane_offset - a_offset) / (b_offset - a_offset));
+    }
+
+    // TODO test
+    /// Get the plane halfway between the origin and the given point.
+    pub fn halfway_from_origin_to(point: Vector3<Real>) -> Plane<Real> {
+        Plane::build_from_normal_and_point(point.unit(), point.scale(Real::from(0.5)))
+    }
+
+    // TODO test, constexpr
+    /// Construct a plane from a unit normal vector and a point.
+    fn build_from_normal_and_point(
+        unit_normal: Vector3<Real>,
+        point: Vector3<Real>,
+    ) -> Plane<Real> {
+        let plane_offset = Vector3::dot(&unit_normal, &point);
+
+        Plane {
+            unit_normal: unit_normal,
+            plane_offset: plane_offset,
+        }
     }
 }
 

@@ -17,7 +17,7 @@
 use crate::celery::{Celery, ExpandingSearch, ToCeleryPoint};
 use crate::float::{Float, Particle};
 use crate::polyhedron::Polyhedron;
-use crate::vector3::{BoundingBox, Vector3};
+use crate::vector3::{BoundingBox, Plane, Vector3};
 
 /// Contains a vector of particle objects, a spatial data structure, and a polyhedron representing
 /// the container.
@@ -223,11 +223,24 @@ impl<'a, Real: Float, PointType: Particle<Real>> Cell<'a, Real, PointType> {
                 match self.target_group {
                     Some(target) => {}
                     None => {
-                        for search_point in search_points {
-                            // TODO we need to make sure that the point at the center of the
-                            // polyhedron is not used for cutting, if such a point exists. It might
-                            // be best to use the indexes instead of a reference to the point itself
-                            // to make that easier, which is what the C++ version does.
+                        for search_point_index in search_points {
+                            if search_point_index != self.index {
+                                let search_point =
+                                    &self.diagram.cell_array.points[search_point_index];
+
+                                // TODO implement this as a vector method, if possible
+                                let search_point_as_vector = Vector3 {
+                                    x: search_point.get_x(),
+                                    y: search_point.get_y(),
+                                    z: search_point.get_z(),
+                                };
+
+                                self.polyhedron.cut_with_plane(
+                                    self.diagram.original_indices[search_point_index],
+                                    // TODO handle the fact that the polyhedron has been translated.
+                                    &Plane::halfway_from_origin_to(search_point_as_vector),
+                                );
+                            }
                         }
                     }
                 }

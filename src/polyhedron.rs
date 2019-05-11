@@ -855,6 +855,18 @@ impl<Real: Float> Polyhedron<Real> {
         // doubled.
         volume / (6.into())
     }
+
+    // TODO test
+    /// Shift all vertices in the polyhedron by a vector.
+    pub fn translate(&mut self, shift: Vector3<Real>) {
+        for i in 0..self.vertices.len() {
+            // TODO use an actual mutable iterator over the pool, if that's possible
+            match self.vertices.get_mut(i) {
+                Some(v) => v.add(&shift),
+                None => (),
+            }
+        }
+    }
 }
 
 #[cfg(test)]

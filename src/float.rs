@@ -17,11 +17,15 @@
 
 use crate::celery::ToCeleryPoint;
 use std::cmp::Ordering;
-use std::ops::{Add, Div, Mul, Neg, Sub};
 use std::fmt::Debug;
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
 pub trait CubeRoot {
     fn cbrt(self) -> Self;
+}
+
+pub trait SquareRoot {
+    fn sqrt(self) -> Self;
 }
 
 pub trait Float:
@@ -39,6 +43,7 @@ pub trait Float:
     + Into<usize>
     + From<f64>
     + From<i32>
+    + SquareRoot
     + CubeRoot
     + Debug
 {
@@ -59,6 +64,7 @@ impl<T> Float for T where
         + Into<usize>
         + From<f64>
         + From<i32>
+        + SquareRoot
         + CubeRoot
         + Debug
 {
@@ -108,6 +114,12 @@ impl Neg for Float64 {
 
     fn neg(self) -> Float64 {
         Float64(-self.0)
+    }
+}
+
+impl SquareRoot for Float64 {
+    fn sqrt(self) -> Float64 {
+        Float64(self.0.sqrt())
     }
 }
 
