@@ -17,7 +17,7 @@
 
 use crate::celery::ToCeleryPoint;
 use crate::float::Float;
-use std::ops::{Add, Sub};
+use std::ops::{Add, Sub, Neg};
 
 /// A three-dimensional vector that implements a number of mathematical operations.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -106,6 +106,18 @@ impl<Real: Float> Sub for &Vector3<Real> {
             x: self.x - other.x,
             y: self.y - other.y,
             z: self.z - other.z,
+        }
+    }
+}
+
+impl<Real: Float> Neg for &Vector3<Real> {
+    type Output = Vector3<Real>;
+
+    fn neg(self) -> Vector3<Real> {
+        Vector3 {
+            x: -self.x,
+            y: -self.y,
+            z: -self.z,
         }
     }
 }

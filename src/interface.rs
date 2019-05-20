@@ -202,50 +202,82 @@ struct Cell<'a, Real: Float, PointType: Particle<Real>> {
 }
 
 impl<'a, Real: Float, PointType: Particle<Real>> Cell<'a, Real, PointType> {
-    /// Compute the Voronoi cell for a particle. Uses an expanding search strategy if a specific
-    /// search radius is not provided.
+    /// Compute the Voronoi cell for a particle using an expanding search strategy.
     pub fn compute_voronoi_cell(&mut self) {
-        let polyhedron = &self.polyhedron;
+        let polyhedron = &mut self.polyhedron;
         debug_assert!(!polyhedron.is_built());
 
-        // TODO maybe copy and translate the polyhedron.
+        // Translate the polyhedron so all the center is the origin. This makes finding the cutting
+        // planes easier. It might also have the added benefit of making the floating point
+        // arithmetic more accurate.
+        //
+        // Note that it does not actually affect the points stored in the cell array.
+        polyhedron.translate(-&self.position);
 
-        match self.search_radius {
-            Some(radius) => {
-                // Or real radius?
-                let search_points = self.diagram.cell_array.find_neighbors_in_cell_radius(
-                    self.position.x,
-                    self.position.y,
-                    self.position.z,
-                    radius,
-                );
+        let mut expanding_search = ExpandingSearch::new(
+            &self.diagram.cell_array,
+            self.position.x,
+            self.position.y,
+            self.position.z,
+        );
 
-                match self.target_group {
-                    Some(target) => {}
-                    None => {
-                        for search_point_index in search_points {
-                            if search_point_index != self.index {
-                                let search_point =
-                                    &self.diagram.cell_array.points[search_point_index];
+        let search_points = match self.search_radius {
+            Some(radius) => expanding_search.expand_all_in_radius(radius),
+            None => expanding_search.expand_all_no_radius(),
+        };
 
-                                // TODO implement this as a vector method, if possible
-                                let search_point_as_vector = Vector3 {
-                                    x: search_point.get_x(),
-                                    y: search_point.get_y(),
-                                    z: search_point.get_z(),
-                                };
+        match self.target_group {
+            // If a target group is specified, only cut with particles from that group.
+            Some(target) => {
+                for search_point_index in search_points {
+                    if search_point_index != self.index
+                        && self.diagram.groups[search_point_index] == target
+                    {
+                        let search_point = &self.diagram.cell_array.points[search_point_index];
 
-                                self.polyhedron.cut_with_plane(
-                                    self.diagram.original_indices[search_point_index],
-                                    // TODO handle the fact that the polyhedron has been translated.
-                                    &Plane::halfway_from_origin_to(search_point_as_vector),
-                                );
-                            }
-                        }
+                        // TODO implement this as a vector method, if possible
+                        // Translate the point so that its position is correct relative to the
+                        // center.
+                        let search_point_as_vector = &Vector3 {
+                            x: search_point.get_x(),
+                            y: search_point.get_y(),
+                            z: search_point.get_z(),
+                        } - &self.position;
+
+                        self.polyhedron.cut_with_plane(
+                            self.diagram.original_indices[search_point_index],
+                            // Note that this works because we have translated the
+                            // polyhedron.
+                            &Plane::halfway_from_origin_to(search_point_as_vector),
+                        );
                     }
                 }
             }
-            None => {}
+
+            // If no target group is specified, cut with all particles.
+            None => {
+                for search_point_index in search_points {
+                    if search_point_index != self.index {
+                        let search_point = &self.diagram.cell_array.points[search_point_index];
+
+                        // TODO implement this as a vector method, if possible
+                        // Translate the point so that its position is correct relative to the
+                        // center.
+                        let search_point_as_vector = &Vector3 {
+                            x: search_point.get_x(),
+                            y: search_point.get_y(),
+                            z: search_point.get_z(),
+                        } - &self.position;
+
+                        self.polyhedron.cut_with_plane(
+                            self.diagram.original_indices[search_point_index],
+                            // Note that this works because we have translated the
+                            // polyhedron.
+                            &Plane::halfway_from_origin_to(search_point_as_vector),
+                        );
+                    }
+                }
+            }
         }
     }
 }

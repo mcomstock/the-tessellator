@@ -961,6 +961,118 @@ impl<'a, Real: Float, PointType: Particle<Real>> ExpandingSearch<'a, Real, Point
 
         return point_indices;
     }
+
+    // TODO Note that this method, and to a lesser extent the one below, don't really rely on the
+    // mutability of the expanding search. They could be made immutable or even probably be replaced
+    // by methods implemented directly on the Celery.
+    /// Search outward, adding all points from previously unsearched cells. The search will expand
+    /// outward until all remaining points have been included. The return value is a list of indices
+    /// into the points stored in the Celery.
+    pub fn expand_all_no_radius(&mut self) -> Vec<usize> {
+        // A potential optimization is to initialize the Vec to have size of about
+        // cells_to_add * CELL_DENSITY.
+        let mut point_indices = Vec::new();
+        let search_order = &self.celery.search_order;
+        let search_order_size = search_order.len();
+        let cells_per_dimension = *&self.celery.cell_info.cells_per_dimension as i32;
+
+        // Loop through all available cells.
+        while self.current_search_index < search_order_size {
+            let DistanceIndex { i, j, k, distance } = search_order[self.current_search_index];
+
+            self.current_search_index += 1;
+
+            let x_to_search = self.x_cell_index as i32 + i;
+            let y_to_search = self.y_cell_index as i32 + j;
+            let z_to_search = self.z_cell_index as i32 + k;
+
+            // If the particular cell doesn't exist (i.e. we are attempting to search out of
+            // bounds), just skip it.
+            if x_to_search < 0
+                || x_to_search >= cells_per_dimension
+                || y_to_search < 0
+                || y_to_search >= cells_per_dimension
+                || z_to_search < 0
+                || z_to_search >= cells_per_dimension
+            {
+                continue;
+            }
+
+            let cell_index = Celery::<Real, PointType>::get_cell_from_indices(
+                x_to_search as usize,
+                y_to_search as usize,
+                z_to_search as usize,
+                &self.celery.cell_info,
+            );
+
+            let cell_begin = self.celery.delimiters[cell_index];
+            let cell_end = self.celery.delimiters[cell_index + 1];
+
+            for sorted_index in cell_begin..cell_end {
+                let point_index = self.celery.sorted_indices[sorted_index];
+                point_indices.push(point_index);
+            }
+        }
+
+        return point_indices;
+    }
+
+    /// Search outward, adding all points from previously unsearched cells. The search will expand
+    /// outward until all remaining points have been included, or until the specified radius has
+    /// been reached. The return value is a list of indices into the points stored in the Celery.
+    pub fn expand_all_in_radius(&mut self, max_radius: Real) -> Vec<usize> {
+        // A potential optimization is to initialize the Vec to have size of about
+        // cells_to_add * CELL_DENSITY.
+        let mut point_indices = Vec::new();
+        let search_order = &self.celery.search_order;
+        let search_order_size = search_order.len();
+        let cells_per_dimension = *&self.celery.cell_info.cells_per_dimension as i32;
+
+        // Loop through all available cells.
+        while self.current_search_index < search_order_size {
+            let DistanceIndex { i, j, k, distance } = search_order[self.current_search_index];
+
+            // Stop if the search has gone beyond the maximum radius.
+            if distance > max_radius {
+                return point_indices;
+            }
+
+            self.current_search_index += 1;
+
+            let x_to_search = self.x_cell_index as i32 + i;
+            let y_to_search = self.y_cell_index as i32 + j;
+            let z_to_search = self.z_cell_index as i32 + k;
+
+            // If the particular cell doesn't exist (i.e. we are attempting to search out of
+            // bounds), just skip it.
+            if x_to_search < 0
+                || x_to_search >= cells_per_dimension
+                || y_to_search < 0
+                || y_to_search >= cells_per_dimension
+                || z_to_search < 0
+                || z_to_search >= cells_per_dimension
+            {
+                continue;
+            }
+
+            let cell_index = Celery::<Real, PointType>::get_cell_from_indices(
+                x_to_search as usize,
+                y_to_search as usize,
+                z_to_search as usize,
+                &self.celery.cell_info,
+            );
+
+            let cell_begin = self.celery.delimiters[cell_index];
+            let cell_end = self.celery.delimiters[cell_index + 1];
+
+            for sorted_index in cell_begin..cell_end {
+                let point_index = self.celery.sorted_indices[sorted_index];
+                point_indices.push(point_index);
+            }
+        }
+
+        return point_indices;
+    }
 }
 
 #[cfg(test)]
@@ -1329,6 +1441,49 @@ mod tests {
         let search_results = expanding_search.expand(Float64(10.0), 1000);
 
         assert_eq!(search_results.len(), 100);
+    }
+
+    #[test]
+    fn expand_all_no_radius_test() {
+        let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 100);
+        let celery = Celery::new(pts);
+        let mut expanding_search =
+            ExpandingSearch::new(&celery, Float64(0.0), Float64(0.0), Float64(0.0));
+
+        let search_results = expanding_search.expand_all_no_radius();
+
+        assert_eq!(search_results.len(), 100);
+    }
+
+    #[test]
+    fn expand_all_in_radius_test() {
+        // Create a cell array with 4 cells in each dimension. This value will need to change if the
+        // cell density ever changes.
+        let total_points = 79;
+
+        // Ensure that the celery is 4x4 so we know the bounds are at whole numbers.
+        let big_pt = TestPoint(2.0.into(), 2.0.into(), 2.0.into());
+        let little_pt = TestPoint((-2.0).into(), (-2.0).into(), (-2.0).into());
+        let mut pts = generate_random_points(-2.0, 2.0, -2.0, 2.0, -2.0, 2.0, total_points - 2);
+        pts.push(big_pt);
+        pts.push(little_pt);
+
+        let celery = Celery::new(pts);
+        let mut expanding_search =
+            ExpandingSearch::new(&celery, Float64(0.0), Float64(0.0), Float64(0.0));
+
+        let search_results = expanding_search.expand_all_in_radius(Float64(0.5));
+        // Note that the big point is "near" because the cells are adjacent - a corner is touching.
+        assert!(search_results.contains(&77));
+        assert!(!search_results.contains(&78));
+        assert!(search_results.len() < 79);
+
+        expanding_search = ExpandingSearch::new(&celery, Float64(0.0), Float64(0.0), Float64(0.0));
+
+        let search_results = expanding_search.expand_all_in_radius(Float64(10.0));
+        assert!(search_results.contains(&77));
+        assert!(search_results.contains(&78));
+        assert_eq!(search_results.len(), 79);
     }
 
     #[test]
