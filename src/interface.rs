@@ -280,4 +280,42 @@ impl<'a, Real: Float, PointType: Particle<Real>> Cell<'a, Real, PointType> {
             }
         }
     }
+
+    /// Get the volume of the Voronoi cell.
+    pub fn compute_volume(&mut self) -> Real {
+        self.polyhedron.compute_volume()
+    }
+
+    /// Get the neighbors (by index) of the point in the Voronoi cell.
+    pub fn compute_neighbors(&self) -> Vec<usize> {
+        self.polyhedron.compute_neighbors()
+    }
+
+    /// Get the indices of all the points within a radius of the Voronoi cell. If a target group is
+    /// specified, only get neighbors in that group.
+    pub fn compute_neighbor_cloud(&self, radius: Real, target_group: Option<usize>) -> Vec<usize> {
+        let mut expanding_search = ExpandingSearch::new(
+            &self.diagram.cell_array,
+            self.position.x,
+            self.position.y,
+            self.position.z,
+        );
+
+        let mut neighbors = expanding_search.expand_all_in_radius(radius);
+
+        // Remove points from other groups if a target group is specified.
+        match target_group {
+            Some(target) => neighbors.retain(|n| self.diagram.groups[*n] == target),
+            _ => (),
+        };
+
+        neighbors
+    }
+
+    /// Get the vertices of the Voronoi cell.
+    pub fn compute_vertices(&self) -> Vec<Vector3<Real>> {
+        self.polyhedron.compute_vertices()
+    }
+
+    // TODO compute_faces - requires VoronoiFace struct
 }

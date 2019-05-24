@@ -837,7 +837,7 @@ impl<Real: Float> Polyhedron<Real> {
     ///
     /// Since we compute the weighted normal by volume instead of the unit normal, steps 1 and 2
     /// are combined into a single step.
-    fn compute_volume(&mut self) -> Real {
+    pub fn compute_volume(&mut self) -> Real {
         self.compute_face_data();
 
         let mut volume = Real::from(0);
@@ -866,6 +866,31 @@ impl<Real: Float> Polyhedron<Real> {
                 None => (),
             }
         }
+    }
+
+    // TODO test
+    /// Get the indices of the points that share a face with this Polyhedron.
+    pub fn compute_neighbors(&self) -> Vec<usize> {
+        let mut neighbors = Vec::new();
+
+        for face in &self.faces {
+            // TODO maybe allow empty point index, but that seems like an error
+            neighbors.push(face.point_index.unwrap());
+        }
+
+        neighbors
+    }
+
+    // TODO test
+    /// Get the points at the vertices of the Polyhedron.
+    pub fn compute_vertices(&self) -> Vec<Vector3<Real>> {
+        let mut vertices = Vec::new();
+
+        for vertex in &self.vertices {
+            vertices.push(vertex.clone());
+        }
+
+        vertices
     }
 }
 
