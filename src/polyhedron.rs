@@ -892,6 +892,48 @@ impl<Real: Float> Polyhedron<Real> {
 
         vertices
     }
+
+    // TODO test
+    /// Get the vertices for a face.
+    pub fn compute_face_vertices(&self, face_index: usize) -> Vec<Vector3<Real>> {
+        let mut face_vertices = Vec::new();
+
+        let start = self.faces.get_or_fail(face_index).starting_edge_index;
+        let mut current = start.clone();
+
+        loop {
+            let edge = self.edges.get_or_fail(current);
+
+            let vertex_index = edge.target.unwrap();
+            let vertex = self.vertices.get_or_fail(vertex_index);
+
+            face_vertices.push(vertex.clone());
+
+            // Get the next edge until we loop back around.
+            current = edge.next.unwrap();
+            if current == start {
+                break;
+            }
+        }
+
+        face_vertices
+    }
+
+    // TODO figure out if this is right
+    pub fn get_face_point(&self, face_index: usize) -> usize {
+        self.faces.get_or_fail(face_index).point_index.unwrap()
+    }
+
+    // TODO maybe just make it public? This is probably slower.
+    pub fn get_face_indices(&self) -> Vec<usize> {
+        let mut face_indices = Vec::new();
+
+        for face in &self.faces {
+            face_indices.push(face.point_index.unwrap());
+        }
+
+        face_indices
+    }
 }
 
 #[cfg(test)]

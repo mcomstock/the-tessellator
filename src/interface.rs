@@ -317,5 +317,44 @@ impl<'a, Real: Float, PointType: Particle<Real>> Cell<'a, Real, PointType> {
         self.polyhedron.compute_vertices()
     }
 
-    // TODO compute_faces - requires VoronoiFace struct
+    /// Get the faces of the Voronoi cell.
+    pub fn compute_faces(&self) -> Vec<VoronoiFace<Real, PointType>> {
+        let mut faces = Vec::new();
+
+        for face_index in self.polyhedron.get_face_indices() {
+            faces.push(VoronoiFace {
+                face_index: face_index,
+                cell: &self,
+            });
+        }
+
+        faces
+    }
+}
+
+/// A face of a Voronoi cell.
+pub struct VoronoiFace<'a, 'b: 'a, Real: Float, PointType: Particle<Real>> {
+    /// The index of the face in the Polyhedron for the cell.
+    face_index: usize,
+
+    /// The Voronoi cell that contains this face.
+    cell: &'a Cell<'b, Real, PointType>,
+}
+
+impl<'a, 'b: 'a, Real: Float, PointType: Particle<Real>> VoronoiFace<'a, 'b, Real, PointType> {
+    /// Get the vertices of the Voronoi face.
+    pub fn compute_vertices(&self) -> Vec<Vector3<Real>> {
+        self.cell.polyhedron.compute_face_vertices(self.face_index)
+    }
+
+    /// Get the area of the Voronoi face.
+    pub fn compute_area(&self) -> Real {
+        Real::from(0.5) * self.cell.polyhedron.weighted_normal(self.face_index).mag()
+    }
+
+    /// Get the index of the neighbor cell that cut this cell to make this face.
+    pub fn compute_neighbor(&self) -> usize {
+        // TODO Is this correct? Seems like this would get this cell.
+        self.cell.polyhedron.get_face_point(self.face_index)
+    }
 }
