@@ -181,15 +181,65 @@ impl<Real: Float, PointType: Particle<Real>> Diagram<Real, PointType> {
 
         morton
     }
+
+    /// Get the cell for the point at an index.
+    pub fn get_cell_at_index(
+        &self,
+        index: usize,
+        polyhedron: Polyhedron<Real>,
+        search_radius: Option<Real>,
+        target_group: Option<usize>,
+    ) -> Cell<Real, PointType> {
+        let point = &self.cell_array.points[self.internal_indices[index]];
+        let position = Vector3 {
+            x: point.get_x(),
+            y: point.get_y(),
+            z: point.get_z(),
+        };
+
+        Cell {
+            diagram: &self,
+            index: Some(index),
+            position: position,
+            polyhedron: polyhedron,
+            search_radius: search_radius,
+            target_group: target_group,
+        }
+    }
+
+    /// Get the cell for the given point, assumed not to be in the diagram.
+    pub fn get_cell_at_particle(
+        &self,
+        point: PointType,
+        polyhedron: Polyhedron<Real>,
+        search_radius: Option<Real>,
+        target_group: Option<usize>,
+    ) -> Cell<Real, PointType> {
+        let position = Vector3 {
+            x: point.get_x(),
+            y: point.get_y(),
+            z: point.get_z(),
+        };
+
+        Cell {
+            diagram: &self,
+            index: None,
+            position: position,
+            polyhedron: polyhedron,
+            search_radius: search_radius,
+            target_group: target_group,
+        }
+    }
 }
 
 /// A Voronoi cell.
 #[derive(Debug)]
-struct Cell<'a, Real: Float, PointType: Particle<Real>> {
+pub struct Cell<'a, Real: Float, PointType: Particle<Real>> {
     /// The diagram this cell belongs to.
     diagram: &'a Diagram<Real, PointType>,
-    /// The index of the point in this cell in the diagram.
-    index: usize,
+    /// The index of the point in this cell in the diagram. If not present, then this cell is
+    /// centered around a point not in the diagram.
+    index: Option<usize>,
     /// The position of the point in the cell.
     position: Vector3<Real>,
     /// The Polyhedron representing the Voronoi cell.
@@ -197,7 +247,8 @@ struct Cell<'a, Real: Float, PointType: Particle<Real>> {
     /// The search radius for neighbors of the particle in the cell. If this is not provided, an
     /// expanding search will be used instead.
     search_radius: Option<Real>,
-    /// The target group of the cell.
+    /// The target group of the cell. If specified, the cell should only be cut by points from that
+    /// group. If not specified, the cell will be cut by all points.
     target_group: Option<usize>,
 }
 
@@ -226,59 +277,60 @@ impl<'a, Real: Float, PointType: Particle<Real>> Cell<'a, Real, PointType> {
             None => expanding_search.expand_all_no_radius(),
         };
 
-        match self.target_group {
-            // If a target group is specified, only cut with particles from that group.
-            Some(target) => {
+        match (self.target_group, self.index) {
+            (Some(target), Some(index)) => {
                 for search_point_index in search_points {
-                    if search_point_index != self.index
+                    if search_point_index != index
                         && self.diagram.groups[search_point_index] == target
                     {
-                        let search_point = &self.diagram.cell_array.points[search_point_index];
-
-                        // TODO implement this as a vector method, if possible
-                        // Translate the point so that its position is correct relative to the
-                        // center.
-                        let search_point_as_vector = &Vector3 {
-                            x: search_point.get_x(),
-                            y: search_point.get_y(),
-                            z: search_point.get_z(),
-                        } - &self.position;
-
-                        self.polyhedron.cut_with_plane(
-                            self.diagram.original_indices[search_point_index],
-                            // Note that this works because we have translated the
-                            // polyhedron.
-                            &Plane::halfway_from_origin_to(search_point_as_vector),
-                        );
+                        self.cut_with_point(search_point_index);
                     }
                 }
             }
 
-            // If no target group is specified, cut with all particles.
-            None => {
+            (Some(target), None) => {
                 for search_point_index in search_points {
-                    if search_point_index != self.index {
-                        let search_point = &self.diagram.cell_array.points[search_point_index];
-
-                        // TODO implement this as a vector method, if possible
-                        // Translate the point so that its position is correct relative to the
-                        // center.
-                        let search_point_as_vector = &Vector3 {
-                            x: search_point.get_x(),
-                            y: search_point.get_y(),
-                            z: search_point.get_z(),
-                        } - &self.position;
-
-                        self.polyhedron.cut_with_plane(
-                            self.diagram.original_indices[search_point_index],
-                            // Note that this works because we have translated the
-                            // polyhedron.
-                            &Plane::halfway_from_origin_to(search_point_as_vector),
-                        );
+                    if self.diagram.groups[search_point_index] == target {
+                        self.cut_with_point(search_point_index);
                     }
+                }
+            }
+
+            (None, Some(index)) => {
+                for search_point_index in search_points {
+                    if search_point_index != index {
+                        self.cut_with_point(search_point_index);
+                    }
+                }
+            }
+
+            (None, None) => {
+                for search_point_index in search_points {
+                    self.cut_with_point(search_point_index);
                 }
             }
         }
+    }
+
+    /// Cut the cell's polyhedron with the point at the specified index.
+    fn cut_with_point(&mut self, point_index: usize) {
+        let search_point = &self.diagram.cell_array.points[point_index];
+
+        // TODO implement this as a vector method, if possible
+        // Translate the point so that its position is correct relative to the
+        // center.
+        let search_point_as_vector = &Vector3 {
+            x: search_point.get_x(),
+            y: search_point.get_y(),
+            z: search_point.get_z(),
+        } - &self.position;
+
+        self.polyhedron.cut_with_plane(
+            self.diagram.original_indices[point_index],
+            // Note that this works because we have translated the
+            // polyhedron.
+            &Plane::halfway_from_origin_to(search_point_as_vector),
+        );
     }
 
     /// Get the volume of the Voronoi cell.
@@ -329,6 +381,11 @@ impl<'a, Real: Float, PointType: Particle<Real>> Cell<'a, Real, PointType> {
         }
 
         faces
+    }
+
+    /// Get the original index of the particle at the center of this cell, as it was passed in.
+    pub fn original_index(&self) -> Option<usize> {
+        self.index.map(|i| self.diagram.original_indices[i])
     }
 }
 
