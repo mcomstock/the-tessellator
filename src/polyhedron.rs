@@ -22,40 +22,44 @@ use crate::vector3::{Plane, PlaneLocation, Vector3};
 
 /// A half-edge structure. Two half-edges make up an edge in the polyhedron, each pointing to one
 /// of the two vertices that make up that edge.
-#[derive(Debug, Default)]
-struct HalfEdge {
+#[derive(Debug, Default, PartialEq)]
+pub struct HalfEdge {
     /// The index of the other half-edge that makes up this edge.
-    flip: Option<usize>,
+    pub flip: Option<usize>,
 
     /// The index of the next half-edge in the polyhedron face.
-    next: Option<usize>,
+    pub next: Option<usize>,
 
     /// The vertex this half-edge belongs to.
-    target: Option<usize>,
+    pub target: Option<usize>,
 
     /// The polyhedron face this half-edge is in.
-    face: Option<usize>,
+    pub face: Option<usize>,
 }
+
+// TODO impl and use convenience methods for getting the target, source, flip, etc
 
 /// A face of a polyhedron.
 #[derive(Debug, Default)]
-struct Face {
-    /// The index of the point that the face contains.
-    point_index: Option<usize>,
+pub struct Face {
+    /// The index of the point that the face contains. This is not used by the Polyhedron, but
+    /// is used by the external diagram structure to determine which of its points created this
+    /// face.
+    pub point_index: Option<usize>,
 
     /// The index of the first half-edge in the face.
-    starting_edge_index: usize,
+    pub starting_edge_index: usize,
 }
 
 // TODO: Think about making this an optional field on the Face itself.
 /// Contains a face and additional information about that face.
 #[derive(Debug, Default)]
-struct FaceData<Real: Float> {
+pub struct FaceData<Real: Float> {
     /// The index of the relevant face.
-    face_index: usize,
+    pub face_index: usize,
 
     /// The vector normal to the face.
-    weighted_normal: Vector3<Real>,
+    pub weighted_normal: Vector3<Real>,
 }
 
 // In general, the faces will be referred to using single characters,
@@ -199,23 +203,17 @@ enum StartingEdges {
 #[derive(Debug, Default)]
 pub struct Polyhedron<Real: Float> {
     /// The index of the root edge of the polyhedron.
-    root_edge: Option<usize>,
+    pub root_edge: Option<usize>,
 
     /// The edges of the polyhedron.
-    edges: Pool<HalfEdge>,
+    pub edges: Pool<HalfEdge>,
     /// The vertices around the polyhedron.
-    vertices: Pool<Vector3<Real>>,
+    pub vertices: Pool<Vector3<Real>>,
     /// The faces of the polyhedron.
-    faces: Pool<Face>,
+    pub faces: Pool<Face>,
 
     /// The face data.
-    face_data: Vec<FaceData<Real>>,
-
-    /// The farthest vertex from the point.
-    max_distance_vertex: Option<usize>,
-
-    /// The farthest another point can be from the current point and still cut the polyhedron.
-    max_neighbor_distance: f64,
+    pub face_data: Vec<FaceData<Real>>,
 }
 
 impl<Real: Float> Polyhedron<Real> {
@@ -264,8 +262,6 @@ impl<Real: Float> Polyhedron<Real> {
         self.edges = edges;
 
         self.face_data.clear();
-
-        // TODO deal with unused fields
     }
 
     /// Construct the initial polyhedron as a cube.
@@ -395,8 +391,8 @@ impl<Real: Float> Polyhedron<Real> {
         (Some(FU as usize), vertices, faces, edges)
     }
 
-    /// Find the index of an edge that is going out of the plane. The edge does not need to begin
-    /// inside the plane to satisfy this condition.
+    /// Find the index of an edge with its target outside of the plane and its source out of the
+    /// plane.
     fn find_outgoing_edge(&self, plane: &Plane<Real>) -> Option<usize> {
         // Check for any vertices that would be cut off by the plane - these are "outside" vertices.
         // If no such vertices are present, then there is no need to cut at all.
@@ -419,7 +415,6 @@ impl<Real: Float> Polyhedron<Real> {
             let target = self.vertices.get(target_index).unwrap();
 
             // If the edge is ingoing, check its flip.
-            // TODO check if this is actually faster
             match plane.vector_location(&target, Polyhedron::tolerance()) {
                 PlaneLocation::Inside => {
                     let flip_target_index = self.target_index(edge.flip).unwrap();
@@ -428,13 +423,8 @@ impl<Real: Float> Polyhedron<Real> {
                     if plane.vector_location(flip_target, Polyhedron::tolerance())
                         == PlaneLocation::Outside
                     {
-                        return Some(flip_target_index);
+                        return Some(edge.flip.unwrap());
                     }
-                }
-
-                // TODO the C++ version doesn't check this case - why?
-                PlaneLocation::Outside => {
-                    return Some(target_index);
                 }
 
                 _ => continue,
@@ -446,8 +436,7 @@ impl<Real: Float> Polyhedron<Real> {
 
     /// Cut the face of the polyhedron with the given plane.
     pub fn cut_with_plane(&mut self, point_index: usize, plane: &Plane<Real>) -> bool {
-        // TODO check validity for debug?
-
+        // Find an edge crossing the plane, if one exists.
         let first_outgoing_edge_index = match self.find_outgoing_edge(plane) {
             Some(index) => {
                 // Check that the target vertex is not inside.
@@ -479,34 +468,30 @@ impl<Real: Float> Polyhedron<Real> {
             _ => return false,
         };
 
-        let first_outside_face_edge_index = self.edges.next_index();
-        let outside_face_index = self.faces.next_index();
+        // Set the root edge to something that is certain not to be destroyed by the cutting
+        // process.
+        self.root_edge = Some(first_outgoing_edge_index);
 
-        let actual_edge_index = self.edges.add(HalfEdge {
-            face: Some(outside_face_index),
-            ..Default::default()
-        });
+        let mut outgoing_edge_index = first_outgoing_edge_index;
+        let mut previous_intersection: Option<usize> = None;
 
-        let actual_face_index = self.faces.add(Face {
+        let first_outside_face_edge_index = self.edges.add(HalfEdge::default());
+        let outside_face_index = self.faces.add(Face {
             point_index: Some(point_index),
             starting_edge_index: first_outside_face_edge_index,
         });
-
-        debug_assert_eq!(first_outside_face_edge_index, actual_edge_index);
-        debug_assert_eq!(outside_face_index, actual_face_index);
+        let mut outside_face_edge_index = first_outside_face_edge_index;
+        self.edges.get_mut_or_fail(first_outside_face_edge_index).face = Some(outside_face_index);
 
         // TODO check if it's fine to do this on-demand instead of batching
         let mut vertices_to_destroy = Vec::<Option<usize>>::new();
         let mut edges_to_destroy = Vec::<Option<usize>>::new();
 
-        let mut outside_face_edge_index = first_outside_face_edge_index;
-        let mut outgoing_edge_index = first_outgoing_edge_index;
-
-        let mut previous_intersection: Option<usize> = None;
-
         loop {
             let mut previous_vertex_index = self.edges.get_or_fail(outgoing_edge_index).target;
             vertices_to_destroy.push(previous_vertex_index);
+
+            println!("vertex: {:?}", self.vertices.get_or_fail(previous_vertex_index.unwrap()));
 
             // The target vertex should not be inside.
             debug_assert_ne!(
@@ -518,26 +503,27 @@ impl<Real: Float> Polyhedron<Real> {
             );
 
             // Set the next edge and target vertex to potentially cut.
-            let mut current_edge_index = self.edges.get_or_fail(outgoing_edge_index).target;
+            let mut current_edge_index = self.edges.get_or_fail(outgoing_edge_index).next;
             let mut current_vertex_index = self.target_index(current_edge_index);
 
-            // TODO: Is there a better way to check this?
-            // If the starting vertex was outside the plane, we definitely need to cut.
-            let mut need_to_cut = plane.vector_location(
-                previous_vertex_index
-                    .and_then(|i| self.vertices.get(i))
-                    .unwrap(),
-                Polyhedron::tolerance(),
-            ) == PlaneLocation::Outside;
-
             let mut previous_location = plane.vector_location(
-                current_vertex_index
+                previous_vertex_index
                     .and_then(|i| self.vertices.get(i))
                     .unwrap(),
                 Polyhedron::tolerance(),
             );
 
-            let mut current_location = previous_location.clone();
+            // TODO: Is there a better way to check this?
+            // TODO: Is there any reason to set this at all?
+            // If the starting vertex was outside the plane, we definitely need to cut.
+            let mut need_to_cut = previous_location == PlaneLocation::Outside;
+
+            let mut current_location = plane.vector_location(
+                current_vertex_index
+                    .and_then(|i| self.vertices.get(i))
+                    .unwrap(),
+                Polyhedron::tolerance(),
+            );
 
             // Keep going until we are back inside.
             while current_location != PlaneLocation::Inside {
@@ -557,9 +543,11 @@ impl<Real: Float> Polyhedron<Real> {
                 );
             }
 
+            println!("v to d {:?}", vertices_to_destroy);
+            println!("which is {:?}", self.vertices.get_or_fail(6));
+
             // TODO: This should cause a bug if `previous_intersection` is not set in the loop.
-            self.edges.get_mut_or_fail(outgoing_edge_index).target =
-                Some(previous_intersection.unwrap());
+            self.edges.get_mut_or_fail(outgoing_edge_index).target = previous_intersection;
 
             if need_to_cut {
                 // TODO: Refactor this massive condition into its own function.
@@ -592,7 +580,7 @@ impl<Real: Float> Polyhedron<Real> {
                     .starting_edge_index = outgoing_edge_index;
 
                 let bridge_edge_index = self.edges.add(HalfEdge {
-                    face: Some(outside_face_index),
+                    face: current_face_index,
                     target: Some(current_intersection_vertex_index),
                     flip: Some(outside_face_edge_index),
                     next: current_edge_index,
@@ -619,6 +607,16 @@ impl<Real: Float> Polyhedron<Real> {
                 .unwrap();
 
             // The test condition that should break out of the loop.
+            // println!("first outgoing_edge: {:?}", self.edges.get_or_fail(first_outgoing_edge_index));
+            // println!("first outgoing_edge.target: {:?}", self.vertices.get_or_fail(self.edges.get_or_fail(first_outgoing_edge_index).target.unwrap()));
+            // println!("outgoing_edge: {:?}", self.edges.get_or_fail(outgoing_edge_index));
+            // println!("outgoing_edge.target: {:?}", self.vertices.get_or_fail(self.edges.get_or_fail(outgoing_edge_index).target.unwrap()));
+            println!("{:?}", self.edges);
+            for e in &self.edges {
+                if e.target.is_none() {
+                    println!("{:?}", e);
+                }
+            }
             if outgoing_edge_index == first_outgoing_edge_index {
                 break;
             }
@@ -875,6 +873,7 @@ impl<Real: Float> Polyhedron<Real> {
 
         for face in &self.faces {
             // TODO maybe allow empty point index, but that seems like an error
+            // ^ actually it indicates the case where "initial" cube faces are still present
             neighbors.push(face.point_index.unwrap());
         }
 
@@ -940,27 +939,51 @@ impl<Real: Float> Polyhedron<Real> {
 mod tests {
     use super::{HalfEdge, Polyhedron};
     use crate::float::Float64;
+    use crate::vector3::{Plane, Vector3};
 
-    #[test]
-    fn create_half_edge() {
-        let _half_edge = HalfEdge::default();
+    fn make_plane(n_x: f64, n_y: f64, n_z: f64, p_x: f64, p_y: f64, p_z: f64) -> Plane<Float64> {
+        Plane::build_from_non_unit_normal_and_point(
+            Vector3::new(Float64(n_x), Float64(n_y), Float64(n_z)),
+            Vector3::new(Float64(p_x), Float64(p_y), Float64(p_z)),
+        )
     }
 
     #[test]
-    fn build_cube() {
-        Polyhedron::build_cube(
-            Float64(-1.0),
-            Float64(-1.0),
-            Float64(-1.0),
-            Float64(1.0),
-            Float64(1.0),
-            Float64(1.0),
-        );
-    }
-
-    #[test]
-    fn new() {
+    fn new_test() {
         let p = Polyhedron::new(
+            Float64(-3.0),
+            Float64(40.0),
+            Float64(-0.2),
+            Float64(0.0),
+            Float64(100.0),
+            Float64(-0.1),
+        );
+
+        assert_eq!(p.edges.len(), 24);
+        assert_eq!(p.vertices.len(), 8);
+        assert_eq!(p.faces.len(), 6);
+        assert_eq!(p.face_data.len(), 0);
+        assert_eq!(p.root_edge.unwrap(), 0);
+
+        for vertex in &p.vertices {
+            assert!(vertex.x == Float64(0.0) || vertex.x == Float64(-3.0));
+            assert!(vertex.y == Float64(100.0) || vertex.y == Float64(40.0));
+            assert!(vertex.z == Float64(-0.1) || vertex.z == Float64(-0.2));
+        }
+    }
+
+    #[test]
+    fn reset_test() {
+        let mut p = Polyhedron::new(
+            Float64(-3.0),
+            Float64(40.0),
+            Float64(-0.2),
+            Float64(0.0),
+            Float64(100.0),
+            Float64(-0.1),
+        );
+
+        p.reset(
             Float64(-1.0),
             Float64(-1.0),
             Float64(-1.0),
@@ -968,5 +991,129 @@ mod tests {
             Float64(1.0),
             Float64(1.0),
         );
+
+        assert_eq!(p.edges.len(), 24);
+        assert_eq!(p.vertices.len(), 8);
+        assert_eq!(p.faces.len(), 6);
+        assert_eq!(p.face_data.len(), 0);
+        assert_eq!(p.root_edge.unwrap(), 0);
+
+        for vertex in &p.vertices {
+            assert!(vertex.x == Float64(1.0) || vertex.x == Float64(-1.0));
+            assert!(vertex.y == Float64(1.0) || vertex.y == Float64(-1.0));
+            assert!(vertex.z == Float64(1.0) || vertex.z == Float64(-1.0));
+        }
+    }
+
+    #[test]
+    fn build_cube_test() {
+        let (root_edge, vertices, faces, edges) = Polyhedron::build_cube(
+            Float64(-1.0),
+            Float64(-1.0),
+            Float64(-1.0),
+            Float64(1.0),
+            Float64(1.0),
+            Float64(1.0),
+        );
+
+        assert_eq!(root_edge.unwrap(), 0);
+        assert_eq!(vertices.len(), 8);
+        assert_eq!(faces.len(), 6);
+        assert_eq!(edges.len(), 24);
+
+        for e in &edges {
+            // The flip of the flip should get back to the original edge.
+            assert_eq!(
+                edges.get_or_fail(edges.get_or_fail(e.flip.unwrap()).flip.unwrap()),
+                e
+            );
+        }
+
+        // TODO perhaps test more carefully
+    }
+
+    #[test]
+    fn find_outgoing_edge_no_cut() {
+        let poly = Polyhedron::new(
+            Float64(-1.0),
+            Float64(-1.0),
+            Float64(-1.0),
+            Float64(1.0),
+            Float64(1.0),
+            Float64(1.0),
+        );
+
+        // This plane lies outside the polyhedron.
+        let plane = Plane::build_from_non_unit_normal_and_point(
+            Vector3::new(Float64(1.0), Float64(1.0), Float64(1.0)),
+            Vector3::new(Float64(2.0), Float64(2.0), Float64(2.0)),
+        );
+
+        assert_eq!(poly.find_outgoing_edge(&plane), None);
+    }
+
+    #[test]
+    fn find_outgoing_edge_with_cut() {
+        let poly = Polyhedron::new(
+            Float64(-1.0),
+            Float64(-1.0),
+            Float64(-1.0),
+            Float64(1.0),
+            Float64(1.0),
+            Float64(1.0),
+        );
+
+        // This plane should cut the polyhedron, only removing the corner (1, 1, 1).
+        let plane = Plane::build_from_non_unit_normal_and_point(
+            Vector3::new(Float64(1.0), Float64(1.0), Float64(1.0)),
+            Vector3::new(Float64(0.5), Float64(0.5), Float64(0.5)),
+        );
+
+        let edge = poly
+            .edges
+            .get_or_fail(poly.find_outgoing_edge(&plane).unwrap());
+
+        let target_vertex = poly.vertices.get_or_fail(edge.target.unwrap());
+
+        let source_vertex = poly
+            .vertices
+            .get_or_fail(poly.edges.get_or_fail(edge.flip.unwrap()).target.unwrap());
+
+        let corner = Vector3::new(Float64(1.0), Float64(1.0), Float64(1.0));
+        let adjacent_1 = Vector3::new(Float64(-1.0), Float64(1.0), Float64(1.0));
+        let adjacent_2 = Vector3::new(Float64(1.0), Float64(-1.0), Float64(1.0));
+        let adjacent_3 = Vector3::new(Float64(1.0), Float64(1.0), Float64(-1.0));
+
+        // The target of the edge should be (1, 1, 1).
+        assert_eq!(target_vertex, &corner);
+
+        // The source of the edge should be an adjacent vertex.
+        assert!(
+            source_vertex == &adjacent_1
+                || source_vertex == &adjacent_2
+                || source_vertex == &adjacent_3
+        );
+    }
+
+    #[test]
+    fn cut_with_plane() {
+        let mut poly = Polyhedron::new(
+            Float64(-1.0),
+            Float64(-1.0),
+            Float64(-1.0),
+            Float64(1.0),
+            Float64(1.0),
+            Float64(1.0),
+        );
+
+        // The actual value of the point index doesn't matter to the polyhedron, but can be used to
+        // find the new face for our testing purposes.
+        let point_index = 100;
+        let point = Vector3::new(Float64(1.0), Float64(1.0), Float64(1.0));
+        let plane = Plane::halfway_from_origin_to(point);
+
+        poly.cut_with_plane(point_index, &plane);
+
+        // TODO test more thoroughly
     }
 }

@@ -17,7 +17,7 @@
 
 use crate::celery::ToCeleryPoint;
 use crate::float::Float;
-use std::ops::{Add, Sub, Neg};
+use std::ops::{Add, Neg, Sub};
 
 /// A three-dimensional vector that implements a number of mathematical operations.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -28,6 +28,11 @@ pub struct Vector3<Real: Float> {
 }
 
 impl<Real: Float> Vector3<Real> {
+    /// Construct a vector.
+    pub fn new(x: Real, y: Real, z: Real) -> Vector3<Real> {
+        Vector3 { x, y, z }
+    }
+
     // TODO constexpr
     /// The dot product of two vectors.
     pub fn dot(a: &Vector3<Real>, b: &Vector3<Real>) -> Real {
@@ -149,7 +154,7 @@ pub enum PlaneLocation {
 
 /// A two-dimensional plane defined by an offset and a normal vector. The plane is given by
 ///   unit_normal.x * x + unit_normal.y * y + unit_normal.z * z + plane_offset = 0
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct Plane<Real: Float> {
     /// A unit normal vector to the plane. Note that this gives the "direction" of the plane.
     pub unit_normal: Vector3<Real>,
@@ -220,8 +225,8 @@ impl<Real: Float> Plane<Real> {
     }
 
     // TODO test, constexpr
-    /// Construct a plane from a unit normal vector and a point.
-    fn build_from_normal_and_point(
+    /// Construct a plane from a unit normal vector and a point on the plane.
+    pub fn build_from_normal_and_point(
         unit_normal: Vector3<Real>,
         point: Vector3<Real>,
     ) -> Plane<Real> {
@@ -231,6 +236,16 @@ impl<Real: Float> Plane<Real> {
             unit_normal: unit_normal,
             plane_offset: plane_offset,
         }
+    }
+
+    // TODO test, constexpr
+    /// Construct a plane from a normal vector and a point on the plane. In general, this should
+    /// not be used in performace-critical code, as it must compute a unit vector from the vector.
+    pub fn build_from_non_unit_normal_and_point(
+        normal: Vector3<Real>,
+        point: Vector3<Real>,
+    ) -> Plane<Real> {
+        Plane::build_from_normal_and_point(normal.unit(), point)
     }
 }
 
@@ -419,5 +434,44 @@ mod tests {
 
         assert_eq!(b.low, v(-0.5, -0.5, -0.5));
         assert_eq!(b.high, v(0.5, 0.5, 0.5));
+    }
+
+    #[test]
+    fn halfway_from_origin_to_1() {
+        let point = Vector3::new(Float64(1.0), Float64(1.0), Float64(1.0));
+        let plane = Plane::halfway_from_origin_to(point);
+
+        let expected_plane = Plane::build_from_non_unit_normal_and_point(
+            Vector3::new(Float64(0.5), Float64(0.5), Float64(0.5)),
+            Vector3::new(Float64(0.5), Float64(0.5), Float64(0.5)),
+        );
+
+        assert_eq!(plane, expected_plane);
+    }
+
+    #[test]
+    fn halfway_from_origin_to_2() {
+        let point = Vector3::new(Float64(-1.0), Float64(1.0), Float64(1.0));
+        let plane = Plane::halfway_from_origin_to(point);
+
+        let expected_plane = Plane::build_from_non_unit_normal_and_point(
+            Vector3::new(Float64(-0.5), Float64(0.5), Float64(0.5)),
+            Vector3::new(Float64(-0.5), Float64(0.5), Float64(0.5)),
+        );
+
+        assert_eq!(plane, expected_plane);
+    }
+
+    #[test]
+    fn halfway_from_origin_to_3() {
+        let point = Vector3::new(Float64(-1.0), Float64(-1.0), Float64(-1.0));
+        let plane = Plane::halfway_from_origin_to(point);
+
+        let expected_plane = Plane::build_from_non_unit_normal_and_point(
+            Vector3::new(Float64(-0.5), Float64(-0.5), Float64(-0.5)),
+            Vector3::new(Float64(-0.5), Float64(-0.5), Float64(-0.5)),
+        );
+
+        assert_eq!(plane, expected_plane);
     }
 }

@@ -1300,44 +1300,44 @@ mod tests {
         check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
     }
 
-    #[test]
-    fn insert_one_million_points() {
-        let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1000000);
-        let celery = Celery::new(pts);
+    // #[test]
+    // fn insert_one_million_points() {
+    //     let pts = generate_random_points(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 1000000);
+    //     let celery = Celery::new(pts);
 
-        assert_eq!(celery.cell_info.cells_per_dimension, 93);
-        assert_eq!(celery.search_order.len(), 6331625);
-        assert_eq!(celery.points.len(), 1000000);
-        assert_eq!(celery.delimiters.len(), 804358);
+    //     assert_eq!(celery.cell_info.cells_per_dimension, 93);
+    //     assert_eq!(celery.search_order.len(), 6331625);
+    //     assert_eq!(celery.points.len(), 1000000);
+    //     assert_eq!(celery.delimiters.len(), 804358);
 
-        check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
-    }
+    //     check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
+    // }
 
-    #[test]
-    fn insert_one_million_points_large() {
-        let pts = generate_random_points(-1000.0, 500.0, -1000.0, 500.0, -1000.0, 500.0, 1000000);
-        let celery = Celery::new(pts);
+    // #[test]
+    // fn insert_one_million_points_large() {
+    //     let pts = generate_random_points(-1000.0, 500.0, -1000.0, 500.0, -1000.0, 500.0, 1000000);
+    //     let celery = Celery::new(pts);
 
-        assert_eq!(celery.cell_info.cells_per_dimension, 93);
-        assert_eq!(celery.search_order.len(), 6331625);
-        assert_eq!(celery.points.len(), 1000000);
-        assert_eq!(celery.delimiters.len(), 804358);
+    //     assert_eq!(celery.cell_info.cells_per_dimension, 93);
+    //     assert_eq!(celery.search_order.len(), 6331625);
+    //     assert_eq!(celery.points.len(), 1000000);
+    //     assert_eq!(celery.delimiters.len(), 804358);
 
-        check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
-    }
+    //     check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
+    // }
 
-    #[test]
-    fn insert_one_million_points_oblong() {
-        let pts = generate_random_points(-5.0, -4.0, 12.0, 1000.0, -10000.0, 1.0, 1000000);
-        let celery = Celery::new(pts);
+    // #[test]
+    // fn insert_one_million_points_oblong() {
+    //     let pts = generate_random_points(-5.0, -4.0, 12.0, 1000.0, -10000.0, 1.0, 1000000);
+    //     let celery = Celery::new(pts);
 
-        assert_eq!(celery.cell_info.cells_per_dimension, 93);
-        assert_eq!(celery.search_order.len(), 6331625);
-        assert_eq!(celery.points.len(), 1000000);
-        assert_eq!(celery.delimiters.len(), 804358);
+    //     assert_eq!(celery.cell_info.cells_per_dimension, 93);
+    //     assert_eq!(celery.search_order.len(), 6331625);
+    //     assert_eq!(celery.points.len(), 1000000);
+    //     assert_eq!(celery.delimiters.len(), 804358);
 
-        check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
-    }
+    //     check_delimiters(celery.cells, celery.sorted_indices, celery.delimiters);
+    // }
 
     #[test]
     fn expanding_search_center() {
